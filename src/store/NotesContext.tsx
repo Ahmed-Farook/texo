@@ -1055,11 +1055,16 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       prev.map(n => {
         if (n.id === noteId) {
           const isChecklist = isChecklistNote(n);
-          // If a checklist is moved to 'default' (Notes section), keep its folder as 'checklists' so it stays safely in Checklists
-          const targetFolderId = (isChecklist && folderId === 'default') ? 'checklists' : folderId;
+          // Strict type isolation: notes cannot be moved to checklists, checklists cannot be moved to notes
+          if (!isChecklist && folderId === 'checklists') {
+            return n;
+          }
+          if (isChecklist && folderId === 'default') {
+            return n;
+          }
           const updated: Note = {
             ...n,
-            folderId: targetFolderId,
+            folderId,
             isChecklist: isChecklist ? true : false,
             updatedAt: Date.now(),
           };
@@ -1501,10 +1506,16 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       prev.map(note => {
         if (idsToMove.has(note.id)) {
           const isChecklist = isChecklistNote(note);
-          const targetFolderId = (isChecklist && folderId === 'default') ? 'checklists' : folderId;
+          // Strict type isolation: notes cannot be moved to checklists, checklists cannot be moved to notes
+          if (!isChecklist && folderId === 'checklists') {
+            return note;
+          }
+          if (isChecklist && folderId === 'default') {
+            return note;
+          }
           const updated: Note = {
             ...note,
-            folderId: targetFolderId,
+            folderId,
             isChecklist: isChecklist ? true : false,
             updatedAt: Date.now(),
           };

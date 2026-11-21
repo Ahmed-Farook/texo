@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Search,
   X,
@@ -23,7 +23,7 @@ import { NoteCard } from './NoteCard';
 import { triggerHaptic } from '../../utils/haptics';
 import { getDateBucket, DateBucket } from '../../utils/dateUtils';
 import type { UpdateInfo } from '../../utils/updateChecker';
-import type { Folder as FolderType } from '../../types/note';
+import type { Folder as FolderType, Note } from '../../types/note';
 import { DeleteFolderModal } from '../common/DeleteFolderModal';
 import { isChecklistNote } from '../../utils/storage';
 
@@ -75,6 +75,16 @@ export const NotesList: React.FC<NotesListProps> = ({
 
   const [showMovePicker, setShowMovePicker] = useState(false);
   const [showBulkExportMenu, setShowBulkExportMenu] = useState(false);
+
+  // Type analysis of selected notes for Move Picker isolation
+  const selectedNotesList = useMemo<Note[]>(
+    () => notes.filter((n: Note) => selectedNoteIds.includes(n.id)),
+    [notes, selectedNoteIds]
+  );
+  const hasSelectedChecklist = selectedNotesList.some((n: Note) => isChecklistNote(n));
+  const hasSelectedNormalNote = selectedNotesList.some((n: Note) => !isChecklistNote(n));
+  const areAllSelectedChecklists = hasSelectedChecklist && !hasSelectedNormalNote;
+  const areAllSelectedNotes = hasSelectedNormalNote && !hasSelectedChecklist;
   const [isAddingFolder, setIsAddingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
@@ -1114,7 +1124,11 @@ export const NotesList: React.FC<NotesListProps> = ({
               <div className="flex items-center space-x-2">
                 <FolderInput size={17} className="text-[#395060] dark:text-[#7EAAD0]" />
                 <h3 className="text-sm font-semibold text-[#1C2B36] dark:text-[#E8EEF3]">
-                  Move {selectedNoteIds.length} {selectedNoteIds.length === 1 ? 'Note' : 'Notes'} To
+                  {areAllSelectedChecklists
+                    ? `Move ${selectedNoteIds.length} ${selectedNoteIds.length === 1 ? 'Checklist' : 'Checklists'} To`
+                    : areAllSelectedNotes
+                    ? `Move ${selectedNoteIds.length} ${selectedNoteIds.length === 1 ? 'Note' : 'Notes'} To`
+                    : `Move ${selectedNoteIds.length} Items To Folder`}
                 </h3>
               </div>
               <button
@@ -1128,42 +1142,51 @@ export const NotesList: React.FC<NotesListProps> = ({
             {/* Folder choices */}
             <div className="p-3 space-y-3 overflow-y-auto">
               <div className="bg-[#FAF6EF] dark:bg-[#1C2733] rounded-xl overflow-hidden shadow-xs divide-y divide-[#DFD3C0]/50 dark:divide-[#223344]">
-                <button
-                  onClick={() => {
-                    moveSelectedNotesToFolder('default');
-                    setShowMovePicker(false);
-                  }}
-                  className="w-full px-3.5 py-2.5 flex items-center justify-between text-xs text-[#1C2B36] dark:text-[#E8EEF3] hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors text-left"
-                >
-                  <div className="flex items-center space-x-2.5">
-                    <div className="w-6 h-6 rounded-md bg-[#E8F1F7] dark:bg-[#203448] text-[#213A50] dark:text-[#7EAAD0] flex items-center justify-center shrink-0">
-                      <Folder size={14} />
+                {/* Notes (Default section): Only visible when moving normal notes */}
+                {!hasSelectedChecklist && (
+                  <button
+                    onClick={() => {
+                      moveSelectedNotesToFolder('default');
+                      setShowMovePicker(false);
+                    }}
+                    className="w-full px-3.5 py-2.5 flex items-center justify-between text-xs text-[#1C2B36] dark:text-[#E8EEF3] hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors text-left"
+                  >
+                    <div className="flex items-center space-x-2.5">
+                      <div className="w-6 h-6 rounded-md bg-[#E8F1F7] dark:bg-[#203448] text-[#213A50] dark:text-[#7EAAD0] flex items-center justify-center shrink-0">
+                        <Folder size={14} />
+                      </div>
+                      <span className="font-medium">Notes</span>
                     </div>
-                    <span className="font-medium">Notes</span>
-                  </div>
-                  {selectedFolderId === 'default' && (
-                    <span className="text-[10px] text-neutral-400">Current</span>
-                  )}
-                </button>
+                    {selectedNotesList.length > 0 &&
+                      selectedNotesList.every((n: Note) => n.folderId === 'default' || !n.folderId) && (
+                        <span className="text-[10px] text-neutral-400">Current</span>
+                      )}
+                  </button>
+                )}
 
-                <button
-                  onClick={() => {
-                    moveSelectedNotesToFolder('checklists');
-                    setShowMovePicker(false);
-                  }}
-                  className="w-full px-3.5 py-2.5 flex items-center justify-between text-xs text-[#1C2B36] dark:text-[#E8EEF3] hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors text-left"
-                >
-                  <div className="flex items-center space-x-2.5">
-                    <div className="w-6 h-6 rounded-md bg-[#FAF0DE] dark:bg-[#2E2818] text-apple-yellow flex items-center justify-center shrink-0">
-                      <ListTodo size={14} />
+                {/* Checklists section: Only visible when moving checklists */}
+                {!hasSelectedNormalNote && (
+                  <button
+                    onClick={() => {
+                      moveSelectedNotesToFolder('checklists');
+                      setShowMovePicker(false);
+                    }}
+                    className="w-full px-3.5 py-2.5 flex items-center justify-between text-xs text-[#1C2B36] dark:text-[#E8EEF3] hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors text-left"
+                  >
+                    <div className="flex items-center space-x-2.5">
+                      <div className="w-6 h-6 rounded-md bg-[#E8F1F7] dark:bg-[#203448] text-[#213A50] dark:text-[#7EAAD0] flex items-center justify-center shrink-0">
+                        <ListTodo size={14} />
+                      </div>
+                      <span className="font-medium">Checklists</span>
                     </div>
-                    <span className="font-medium">Checklists</span>
-                  </div>
-                  {selectedFolderId === 'checklists' && (
-                    <span className="text-[10px] text-neutral-400">Current</span>
-                  )}
-                </button>
+                    {selectedNotesList.length > 0 &&
+                      selectedNotesList.every((n: Note) => n.folderId === 'checklists') && (
+                        <span className="text-[10px] text-neutral-400">Current</span>
+                      )}
+                  </button>
+                )}
 
+                {/* Custom folders: Can receive both notes and checklists */}
                 {folders.map(f => (
                   <button
                     key={f.id}
@@ -1179,11 +1202,18 @@ export const NotesList: React.FC<NotesListProps> = ({
                       </div>
                       <span className="font-medium truncate">{f.name}</span>
                     </div>
-                    {selectedFolderId === f.id && (
-                      <span className="text-[10px] text-neutral-400">Current</span>
-                    )}
+                    {selectedNotesList.length > 0 &&
+                      selectedNotesList.every((n: Note) => n.folderId === f.id) && (
+                        <span className="text-[10px] text-neutral-400">Current</span>
+                      )}
                   </button>
                 ))}
+
+                {hasSelectedChecklist && hasSelectedNormalNote && folders.length === 0 && (
+                  <div className="p-4 text-center text-xs text-neutral-500 dark:text-neutral-400">
+                    Notes and checklists cannot be moved into each other&apos;s library. Create a folder first to organize them together.
+                  </div>
+                )}
               </div>
             </div>
           </div>

@@ -115,13 +115,23 @@ export async function dbToNote(db: DbNote, key: CryptoKey | null): Promise<Note>
     } catch (_) {}
   }
 
+  let folderId = db.folder_id || 'default';
+
+  // A note with drawing strokes can NEVER be a checklist
+  if (drawingStrokes && drawingStrokes.length > 2 && drawingStrokes !== '[]' && drawingStrokes !== '{}') {
+    isChecklist = false;
+    if (folderId === 'checklists') {
+      folderId = 'default';
+    }
+  }
+
   return {
     id: db.id,
     title,
     content,
     drawingStrokes,
     plainTextPreview,
-    folderId: db.folder_id || 'default',
+    folderId,
     isChecklist,
     isPinned: Boolean(db.is_pinned),
     isTrash: Boolean(db.is_trash),

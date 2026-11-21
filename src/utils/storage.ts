@@ -35,6 +35,10 @@ export const INITIAL_NOTES: Note[] = [
  */
 export function isChecklistNote(note?: Partial<Note> | null): boolean {
   if (!note) return false;
+  // A note with drawing strokes can NEVER be a checklist
+  if (note.drawingStrokes && note.drawingStrokes.length > 2 && note.drawingStrokes !== '[]' && note.drawingStrokes !== '{}') {
+    return false;
+  }
   if (typeof note.isChecklist === 'boolean') {
     return note.isChecklist;
   }
@@ -71,7 +75,41 @@ export const loadStoredNotes = (): Note[] => {
         updated = { ...updated, isPinned: false };
       }
       // Strict isChecklist flag enforcement: only true if created in checklists or explicit pure checklist
-      if (updated.isChecklist === undefined) {
+      const hasDrawingStrokes = Boolean(
+        updated.drawingStrokes &&
+        updated.drawingStrokes.length > 2 &&
+        updated.drawingStrokes !== '[]' &&
+        updated.drawingStrokes !== '{}'
+      );
+      const isPureChecklistContent = Boolean(
+        updated.content &&
+        (updated.content.includes('data-type="taskList"') || updated.content.includes('data-type="taskItem"')) &&
+        !updated.content.includes('<img') &&
+        !updated.content.includes('<table') &&
+        !updated.content.includes('<canvas')
+      );
+
+      // Auto-recover any note that has drawing strokes or rich content and was erroneously marked as checklist or moved to checklists
+      if (hasDrawingStrokes && (updated.isChecklist || updated.folderId === 'checklists')) {
+        hasMigration = true;
+        updated = {
+          ...updated,
+          isChecklist: false,
+          folderId: updated.folderId === 'checklists' ? 'default' : (updated.folderId || 'default'),
+        };
+      } else if (
+        !isPureChecklistContent &&
+        (updated.content?.includes('<p>') || updated.content?.includes('<h2>') || updated.content?.includes('<h3>')) &&
+        (updated.isChecklist || updated.folderId === 'checklists')
+      ) {
+        // Normal text note erroneously placed in checklists
+        hasMigration = true;
+        updated = {
+          ...updated,
+          isChecklist: false,
+          folderId: updated.folderId === 'checklists' ? 'default' : (updated.folderId || 'default'),
+        };
+      } else if (updated.isChecklist === undefined) {
         hasMigration = true;
         updated = { ...updated, isChecklist: updated.folderId === 'checklists' };
       } else if (
@@ -86,8 +124,8 @@ export const loadStoredNotes = (): Note[] => {
         updated = { ...updated, isChecklist: false };
       }
 
-      // If a checklist has folderId 'default' (e.g. accidentally moved to Notes), restore it to 'checklists'
-      if (updated.isChecklist === true && (updated.folderId === 'default' || !updated.folderId)) {
+      // If a pure checklist has folderId 'default' (e.g. accidentally moved to Notes), restore it to 'checklists'
+      if (updated.isChecklist === true && !hasDrawingStrokes && (updated.folderId === 'default' || !updated.folderId)) {
         hasMigration = true;
         updated = { ...updated, folderId: 'checklists' };
       }
