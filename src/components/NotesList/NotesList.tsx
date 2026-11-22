@@ -17,7 +17,6 @@ import {
   Pencil,
   Download,
   ListTodo,
-  Files,
 } from 'lucide-react';
 import { useNotes } from '../../store/NotesContext';
 import { NoteCard } from './NoteCard';
@@ -262,13 +261,8 @@ export const NotesList: React.FC<NotesListProps> = ({
     .filter(group => group.notes.length > 0);
 
   // Folder note counts
-  const allNotesCount = notes.filter(n => !n.isTrash).length;
-  const checklistsCount = notes.filter(
-    n => !n.isTrash && isChecklistNote(n) && (n.folderId === 'checklists' || n.folderId === 'default' || !n.folderId)
-  ).length;
-  const defaultNotesCount = notes.filter(
-    n => !n.isTrash && !isChecklistNote(n) && (n.folderId === 'default' || n.folderId === 'quick' || n.folderId === 'all' || !n.folderId)
-  ).length;
+  const checklistsCount = notes.filter(n => !n.isTrash && isChecklistNote(n)).length;
+  const defaultNotesCount = notes.filter(n => !n.isTrash && !isChecklistNote(n)).length;
   const trashCount = notes.filter(n => n.isTrash).length;
   const getFolderCount = (folderId: string) =>
     notes.filter(n => !n.isTrash && n.folderId === folderId).length;
@@ -427,45 +421,6 @@ export const NotesList: React.FC<NotesListProps> = ({
               <div className={`bg-[#FAF6EF] dark:bg-[#1C2733] border border-[#DFD3C0]/60 dark:border-[#223344] rounded-xl overflow-hidden shadow-xs divide-y divide-[#DFD3C0]/40 dark:divide-[#223344] ${
                 isFolderSelectionMode ? 'opacity-40 pointer-events-none' : ''
               }`}>
-                {/* All Notes */}
-                <button
-                  onClick={() => {
-                    triggerHaptic();
-                    setSelectedFolderId('all');
-                    setIsFolderPickerOpen(false);
-                  }}
-                  className={`w-full px-3.5 py-2.5 flex items-center justify-between text-xs transition-colors text-left ${
-                    selectedFolderId === 'all'
-                      ? 'bg-[#213A50] dark:bg-[#254260] text-white font-medium shadow-xs'
-                      : 'text-[#1C2B36] dark:text-[#E8EEF3] hover:bg-[#E5DCCB] dark:hover:bg-[#202E3C]'
-                  }`}
-                >
-                  <div className="flex items-center space-x-2.5">
-                    <div
-                      className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${
-                        selectedFolderId === 'all'
-                          ? 'bg-white/20 text-white'
-                          : 'bg-[#E8F1F7] dark:bg-[#203448] text-[#213A50] dark:text-[#7EAAD0]'
-                      }`}
-                    >
-                      <Files size={14} />
-                    </div>
-                    <span className="font-medium">All Notes</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <span
-                      className={`text-[11px] font-mono ${
-                        selectedFolderId === 'all' ? 'text-white/90' : 'text-[#8A9BA8] dark:text-[#8AA0B4]'
-                      }`}
-                    >
-                      {allNotesCount}
-                    </span>
-                    {selectedFolderId === 'all' && (
-                      <Check size={15} className="text-white stroke-[2.5]" />
-                    )}
-                  </div>
-                </button>
-
                 {/* Notes (Default) */}
                 <button
                   onClick={() => {
@@ -905,18 +860,26 @@ export const NotesList: React.FC<NotesListProps> = ({
       {/* Notes List / Gallery container */}
       <div className="flex-1 overflow-y-auto p-2 pb-28 md:pb-2">
         {filteredNotes.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center p-4 text-neutral-400 dark:text-neutral-500">
-            <FileText size={32} className="mb-2 stroke-1 opacity-60" />
-            <p className="text-xs font-medium">
-              {searchQuery ? `No notes matching "${searchQuery}"` : 'No Notes Yet'}
+          <div className="h-full flex flex-col items-center justify-center text-center p-4">
+            {selectedFolderId === 'checklists' ? (
+              <ListTodo size={36} className="mb-2 stroke-1 text-[#395060] dark:text-[#7EAAD0] opacity-80" />
+            ) : (
+              <FileText size={36} className="mb-2 stroke-1 text-[#395060] dark:text-[#7EAAD0] opacity-80" />
+            )}
+            <p className="text-sm font-semibold text-[#1C2B36] dark:text-[#CBD8E3]">
+              {searchQuery
+                ? `No notes matching "${searchQuery}"`
+                : selectedFolderId === 'checklists'
+                ? 'No Checklists Yet'
+                : 'No Notes Yet'}
             </p>
             {!searchQuery && currentFolder?.id !== 'trash' && !isSelectionMode && (
               <button
                 onClick={() => createNote()}
-                className="mt-3 flex items-center space-x-1 text-xs text-apple-yellow hover:text-apple-yellowHover font-medium"
+                className="mt-3.5 inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold text-[#172A3C] dark:text-[#A8CEF0] bg-[#DFD3C0]/70 dark:bg-[#254260]/80 hover:bg-[#DFD3C0] dark:hover:bg-[#254260] border border-[#213A50]/20 dark:border-[#7EAAD0]/50 transition-all duration-150 shadow-xs active:scale-95"
               >
-                <Plus size={13} />
-                <span>Create a note</span>
+                <Plus size={14} className="stroke-[2.5]" />
+                <span>{selectedFolderId === 'checklists' ? 'Create a checklist' : 'Create a note'}</span>
               </button>
             )}
           </div>
