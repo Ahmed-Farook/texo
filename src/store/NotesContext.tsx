@@ -148,6 +148,10 @@ interface NotesContextType {
   saveSharedPreviewToNotes: () => void;
   dismissSharedPreview: () => void;
 
+  // Shared Note Loading State
+  sharedNoteLoading: boolean;
+  sharedNoteError: string | null;
+
   // Cloud Synchronization
   syncWithCloud: (showIndicator?: boolean, force?: boolean) => Promise<void>;
 }
@@ -186,6 +190,8 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [importedSharedToast, setImportedSharedToast] = useState<string | null>(null);
   const [sharedPreviewNote, setSharedPreviewNote] = useState<Note | null>(null);
   const sharedPayloadProcessedRef = useRef(false);
+  const [sharedNoteLoading, setSharedNoteLoading] = useState<boolean>(false);
+  const [sharedNoteError, setSharedNoteError] = useState<string | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('apple_notes_theme');
@@ -358,6 +364,22 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       return prev;
     });
   }, []);
+
+  // Recover orphaned notes whose folderId points to a non-existent folder
+  useEffect(() => {
+    const knownFolderIds = new Set(['default', 'checklists', 'trash', ...folders.map(f => f.id)]);
+    setNotes(prev => {
+      let changed = false;
+      const fixed = prev.map(n => {
+        if (n.folderId && !n.isTrash && !knownFolderIds.has(n.folderId)) {
+          changed = true;
+          return { ...n, folderId: isChecklistNote(n) ? 'checklists' : 'default', updatedAt: Date.now() };
+        }
+        return n;
+      });
+      return changed ? fixed : prev;
+    });
+  }, [folders]);
 
   // Sync with Supabase on user sign-in & listen to Realtime changes
   useEffect(() => {
@@ -643,13 +665,19 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           // Main Notes section contains default notes and legacy quick/all (excluding checklists)
           if (isChecklist) return false;
           if (noteFolder !== 'default' && noteFolder !== 'quick' && noteFolder !== 'all') {
-            return false;
+            // Show orphaned notes (whose custom folder was deleted) so they aren't invisible
+            const isKnownFolder = noteFolder === 'checklists' || noteFolder === 'trash' || folders.some(f => f.id === noteFolder);
+            if (isKnownFolder) return false;
+            return true; // Orphaned note → surface here
           }
         } else if (selectedFolderId === 'checklists') {
           // Checklists section shows checklists in checklists folder or any checklist in default section
           if (!isChecklist) return false;
           if (noteFolder !== 'checklists' && noteFolder !== 'default' && noteFolder !== 'quick' && noteFolder !== 'all') {
-            return false;
+            // Show orphaned checklists (whose custom folder was deleted) so they aren't invisible
+            const isKnownFolder = noteFolder === 'trash' || folders.some(f => f.id === noteFolder);
+            if (isKnownFolder) return false;
+            return true; // Orphaned checklist → surface here
           }
         } else {
           if (noteFolder !== selectedFolderId) return false;
@@ -658,7 +686,7 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
       return true;
     }).sort((a, b) => b.updatedAt - a.updatedAt);
-  }, [notes, selectedFolderId, searchQuery]);
+  }, [notes, folders, selectedFolderId, searchQuery]);
 
   const pinnedNotes = useMemo(() => {
     if (selectedFolderId === 'trash') return [];
@@ -887,10 +915,19 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const slug = getShareSlugFromUrl();
     if (slug) {
       sharedPayloadProcessedRef.current = true;
+      setSharedNoteLoading(true);
+      setSharedNoteError(null);
       fetchSharedNoteFromSupabase(slug).then((sharedData) => {
         if (sharedData) {
           setupPreview(sharedData);
+          setSharedNoteLoading(false);
+        } else {
+          setSharedNoteLoading(false);
+          setSharedNoteError('This shared note could not be found. The link may have expired or is invalid.');
         }
+      }).catch(() => {
+        setSharedNoteLoading(false);
+        setSharedNoteError('Failed to load the shared note. Please check your connection and try again.');
       });
       return;
     }
@@ -1600,6 +1637,8 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         sharedPreviewNote,
         saveSharedPreviewToNotes,
         dismissSharedPreview,
+        sharedNoteLoading,
+        sharedNoteError,
         syncWithCloud,
       }}
     >

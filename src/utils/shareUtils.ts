@@ -334,7 +334,7 @@ export function cleanShareUrl(): void {
     let newHash = window.location.hash;
     if (newHash.includes('s=') || newHash.includes('share=')) {
       newHash = newHash
-        .replace(/#?[s|share]=[^&]*&?/, '')
+        .replace(/#?(?:s|share)=[^&]*&?/, '')
         .replace(/^#$/, '');
     }
 

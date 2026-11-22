@@ -7,7 +7,7 @@ import { NotesList } from './NotesList/NotesList';
 import { Editor } from './Editor/Editor';
 import { useNotes } from '../store/NotesContext';
 import { useAuth } from '../store/AuthContext';
-import { Plus, Sparkles } from 'lucide-react';
+import { Plus, Sparkles, FileText } from 'lucide-react';
 import { triggerHaptic } from '../utils/haptics';
 import { useAppUpdater } from '../hooks/useAppUpdater';
 import { UpdateBanner } from './Updates/UpdateBanner';
@@ -36,6 +36,8 @@ export const Layout: React.FC = () => {
     dismissImportedSharedToast,
     sharedPreviewNote,
     dismissSharedPreview,
+    sharedNoteLoading,
+    sharedNoteError,
   } = useNotes();
   const { isAuthModalOpen, closeAuthModal } = useAuth();
   const [showFormatToolbar, setShowFormatToolbar] = useState(true);
@@ -257,6 +259,32 @@ export const Layout: React.FC = () => {
 
   return (
     <div className="flex flex-col h-[100dvh] min-h-[100dvh] w-screen overflow-hidden bg-[#F7F2EA] dark:bg-[#131B24] font-sans pb-[env(safe-area-inset-bottom,0px)]">
+      {/* Shared Note Loading / Error Full-Screen State */}
+      {(sharedNoteLoading || sharedNoteError) && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[#F7F2EA] dark:bg-[#131B24]">
+          <div className="text-center space-y-3 p-6 max-w-sm">
+            {sharedNoteLoading ? (
+              <>
+                <div className="w-8 h-8 border-2 border-apple-yellow dark:border-[#7EAAD0] border-t-transparent rounded-full animate-spin mx-auto" />
+                <p className="text-sm font-medium text-[#1C2B36] dark:text-[#E8EEF3]">Loading shared note…</p>
+                <p className="text-xs text-[#5A6E82] dark:text-[#8AA0B4]">Fetching from cloud</p>
+              </>
+            ) : (
+              <>
+                <FileText size={36} className="mx-auto text-neutral-400 dark:text-neutral-500 stroke-1" />
+                <p className="text-sm font-bold text-[#1C2B36] dark:text-[#E8EEF3]">Note Not Found</p>
+                <p className="text-xs text-[#5A6E82] dark:text-[#8AA0B4] leading-relaxed">{sharedNoteError}</p>
+                <button
+                  onClick={() => { window.location.href = window.location.origin; }}
+                  className="mt-2 px-5 py-2.5 bg-apple-yellow hover:bg-apple-yellowHover text-white rounded-xl text-xs font-semibold shadow-sm active:scale-95 transition-all"
+                >
+                  Open texō
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
       {/* Top Navbar */}
       <TopNavbar
         onToggleChecklist={handleToggleChecklist}

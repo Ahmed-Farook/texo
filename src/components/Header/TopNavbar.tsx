@@ -231,13 +231,13 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
           type="button"
           onClick={() => importInputRef.current?.click()}
           title="Import Notes (.txt, .md, .zip)"
-          className="p-1.5 rounded-md hover:bg-neutral-200 dark:hover:bg-neutral-800 text-neutral-600 dark:text-neutral-300 transition-colors active:scale-95"
+          className="hidden md:flex p-1.5 rounded-md hover:bg-neutral-200 dark:hover:bg-neutral-800 text-neutral-600 dark:text-neutral-300 transition-colors active:scale-95"
         >
           <Upload size={17} />
         </button>
 
         {/* Export dropdown */}
-        <div className="relative" ref={exportRef}>
+        <div className="relative hidden md:block" ref={exportRef}>
           <button
             type="button"
             onClick={(e) => {
@@ -459,12 +459,12 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
         <button
           onClick={toggleTheme}
           title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-          className="p-1.5 rounded-md hover:bg-neutral-200 dark:hover:bg-neutral-800 text-neutral-600 dark:text-neutral-300 transition-colors active:scale-95"
+          className="hidden md:flex p-1.5 rounded-md hover:bg-neutral-200 dark:hover:bg-neutral-800 text-neutral-600 dark:text-neutral-300 transition-colors active:scale-95"
         >
           {theme === 'dark' ? <Sun size={17} className="text-yellow-400" /> : <Moon size={17} />}
         </button>
 
-        <div className="h-4 w-px bg-neutral-300 dark:bg-neutral-700 mx-1" />
+        <div className="hidden md:block h-4 w-px bg-neutral-300 dark:bg-neutral-700 mx-1" />
 
         {/* Mobile: In editor view, show Delete button. In list view, show Software Update button. */}
         {mobileView === 'editor' ? (

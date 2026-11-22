@@ -97,37 +97,9 @@ export const loadStoredNotes = (): Note[] => {
           isChecklist: false,
           folderId: updated.folderId === 'checklists' ? 'default' : (updated.folderId || 'default'),
         };
-      } else if (
-        !isPureChecklistContent &&
-        (updated.content?.includes('<p>') || updated.content?.includes('<h2>') || updated.content?.includes('<h3>')) &&
-        (updated.isChecklist || updated.folderId === 'checklists')
-      ) {
-        // Normal text note erroneously placed in checklists
-        hasMigration = true;
-        updated = {
-          ...updated,
-          isChecklist: false,
-          folderId: updated.folderId === 'checklists' ? 'default' : (updated.folderId || 'default'),
-        };
       } else if (updated.isChecklist === undefined) {
         hasMigration = true;
         updated = { ...updated, isChecklist: updated.folderId === 'checklists' };
-      } else if (
-        updated.isChecklist === true &&
-        updated.folderId !== 'checklists' &&
-        updated.content &&
-        updated.content.includes('<p>') &&
-        !updated.content.startsWith('<h1>To-Do List</h1><ul data-type="taskList">')
-      ) {
-        // Revert any normal note with checkboxes that was wrongly flagged as a checklist
-        hasMigration = true;
-        updated = { ...updated, isChecklist: false };
-      }
-
-      // If a pure checklist has folderId 'default' (e.g. accidentally moved to Notes), restore it to 'checklists'
-      if (updated.isChecklist === true && !hasDrawingStrokes && (updated.folderId === 'default' || !updated.folderId)) {
-        hasMigration = true;
-        updated = { ...updated, folderId: 'checklists' };
       }
       // Migrate older notes where title was saved as <h3> to <h1>
       if (typeof updated.content === 'string' && /^\s*<h3>([\s\S]*?)<\/h3>/i.test(updated.content)) {
