@@ -27,12 +27,18 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag=v$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Create or Verify GitHub Release
+      - name: Create or Verify GitHub Release and Archives
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          VERSION="${{ steps.meta.outputs.version }}"
           TAG="${{ steps.meta.outputs.tag }}"
-          gh release view "$TAG" || gh release create "$TAG" --title "texō $TAG" --notes "Release $TAG for Windows, macOS, and Android"
+          gh release view "$TAG" || gh release create "$TAG" --title "texō $TAG" --notes "texō $TAG release for Android, macOS, Windows, and Web"
+          
+          # Create and attach source archives with texo naming
+          git archive --format=zip --prefix=texo-${VERSION}/ HEAD -o "texo-${VERSION}.zip"
+          git archive --format=tar.gz --prefix=texo-${VERSION}/ HEAD -o "texo-${VERSION}.tar.gz"
+          gh release upload "$TAG" "texo-${VERSION}.zip" "texo-${VERSION}.tar.gz" --clobber
 
   build-android:
     name: Build Android APK
@@ -85,7 +91,6 @@ jobs:
       - name: Prepare APK for Release
         run: |
           cp android/app/build/outputs/apk/debug/app-debug.apk texo-${{ steps.meta.outputs.version }}.apk
-          cp android/app/build/outputs/apk/debug/app-debug.apk Apple-Notes-${{ steps.meta.outputs.version }}.apk
           ls -lh texo-${{ steps.meta.outputs.version }}.apk
 
       - name: Upload Artifact
@@ -100,7 +105,6 @@ jobs:
         run: |
           TAG="v${{ steps.meta.outputs.version }}"
           gh release upload "$TAG" texo-${{ steps.meta.outputs.version }}.apk --clobber
-          gh release upload "$TAG" Apple-Notes-${{ steps.meta.outputs.version }}.apk --clobber
 
       - name: Update releases/texo.apk in repo
         run: |
@@ -155,7 +159,6 @@ jobs:
           DMG_FILE=$(find release -maxdepth 1 -name "*.dmg" | head -n 1)
           echo "Found DMG: $DMG_FILE"
           cp "$DMG_FILE" "texo-${VERSION}-arm64.dmg"
-          cp "$DMG_FILE" "Apple-Notes-${VERSION}-arm64.dmg"
           ls -lh "texo-${VERSION}-arm64.dmg"
 
       - name: Upload Artifact
@@ -170,7 +173,6 @@ jobs:
         run: |
           TAG="v${{ steps.meta.outputs.version }}"
           gh release upload "$TAG" "texo-${{ steps.meta.outputs.version }}-arm64.dmg" --clobber
-          gh release upload "$TAG" "Apple-Notes-${{ steps.meta.outputs.version }}-arm64.dmg" --clobber
 
   build-win:
     name: Build Windows Setup EXE
@@ -220,7 +222,6 @@ jobs:
           fi
           echo "Found real installer: $SETUP_EXE"
           cp "$SETUP_EXE" "texo-Setup-${VERSION}.exe"
-          cp "$SETUP_EXE" "Apple-Notes-Setup-${VERSION}.exe"
           ls -lh "texo-Setup-${VERSION}.exe"
 
       - name: Upload Artifact
@@ -236,4 +237,3 @@ jobs:
         run: |
           TAG="v${{ steps.meta.outputs.version }}"
           gh release upload "$TAG" "texo-Setup-${{ steps.meta.outputs.version }}.exe" --clobber
-          gh release upload "$TAG" "Apple-Notes-Setup-${{ steps.meta.outputs.version }}.exe" --clobber

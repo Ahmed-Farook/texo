@@ -138,8 +138,8 @@ export function getShareSlugFromUrl(): string | null {
 
     // 2. Query param: ?s=<slug> or ?share=<slug> (short, alphanumeric)
     const params = new URLSearchParams(window.location.search);
-    const paramSlug = params.get('s') || params.get('slug');
-    if (paramSlug && paramSlug.length <= 16 && /^[a-zA-Z0-9_-]+$/.test(paramSlug)) {
+    const paramSlug = params.get('s') || params.get('slug') || params.get('share');
+    if (paramSlug && paramSlug.length <= 20 && /^[a-zA-Z0-9_-]+$/.test(paramSlug)) {
       return paramSlug.trim();
     }
 
@@ -147,7 +147,7 @@ export function getShareSlugFromUrl(): string | null {
     const hash = window.location.hash;
     if (hash.startsWith('#s=') || hash.startsWith('#/s/')) {
       const hashVal = hash.replace(/^#(?:\/s\/|s=)/, '').split('&')[0];
-      if (hashVal && hashVal.length <= 16 && /^[a-zA-Z0-9_-]+$/.test(hashVal)) {
+      if (hashVal && hashVal.length <= 20 && /^[a-zA-Z0-9_-]+$/.test(hashVal)) {
         return hashVal.trim();
       }
     }

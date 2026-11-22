@@ -6,7 +6,9 @@ const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: './', // Use relative paths so Electron and mobile WebViews can load assets via file://
+  // Use root '/' when deployed on Vercel or web so subpaths like /s/<slug> resolve assets correctly.
+  // Use relative './' for Electron and Capacitor file:// environments.
+  base: process.env.VERCEL || process.env.VITE_BASE ? '/' : './',
   plugins: [react()],
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),

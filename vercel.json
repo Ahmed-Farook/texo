@@ -3,6 +3,14 @@
   "cleanUrls": false,
   "rewrites": [
     {
+      "source": "/(s|share)/assets/:path*",
+      "destination": "/assets/:path*"
+    },
+    {
+      "source": "/(s|share)/:file(.*\\.[a-zA-Z0-9]+)",
+      "destination": "/:file"
+    },
+    {
       "source": "/verified.html",
       "destination": "/verified.html"
     },

@@ -17,6 +17,7 @@ import {
   Pencil,
   Download,
   ListTodo,
+  Files,
 } from 'lucide-react';
 import { useNotes } from '../../store/NotesContext';
 import { NoteCard } from './NoteCard';
@@ -261,6 +262,7 @@ export const NotesList: React.FC<NotesListProps> = ({
     .filter(group => group.notes.length > 0);
 
   // Folder note counts
+  const allNotesCount = notes.filter(n => !n.isTrash).length;
   const checklistsCount = notes.filter(
     n => !n.isTrash && isChecklistNote(n) && (n.folderId === 'checklists' || n.folderId === 'default' || !n.folderId)
   ).length;
@@ -425,6 +427,45 @@ export const NotesList: React.FC<NotesListProps> = ({
               <div className={`bg-[#FAF6EF] dark:bg-[#1C2733] border border-[#DFD3C0]/60 dark:border-[#223344] rounded-xl overflow-hidden shadow-xs divide-y divide-[#DFD3C0]/40 dark:divide-[#223344] ${
                 isFolderSelectionMode ? 'opacity-40 pointer-events-none' : ''
               }`}>
+                {/* All Notes */}
+                <button
+                  onClick={() => {
+                    triggerHaptic();
+                    setSelectedFolderId('all');
+                    setIsFolderPickerOpen(false);
+                  }}
+                  className={`w-full px-3.5 py-2.5 flex items-center justify-between text-xs transition-colors text-left ${
+                    selectedFolderId === 'all'
+                      ? 'bg-[#213A50] dark:bg-[#254260] text-white font-medium shadow-xs'
+                      : 'text-[#1C2B36] dark:text-[#E8EEF3] hover:bg-[#E5DCCB] dark:hover:bg-[#202E3C]'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2.5">
+                    <div
+                      className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${
+                        selectedFolderId === 'all'
+                          ? 'bg-white/20 text-white'
+                          : 'bg-[#E8F1F7] dark:bg-[#203448] text-[#213A50] dark:text-[#7EAAD0]'
+                      }`}
+                    >
+                      <Files size={14} />
+                    </div>
+                    <span className="font-medium">All Notes</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span
+                      className={`text-[11px] font-mono ${
+                        selectedFolderId === 'all' ? 'text-white/90' : 'text-[#8A9BA8] dark:text-[#8AA0B4]'
+                      }`}
+                    >
+                      {allNotesCount}
+                    </span>
+                    {selectedFolderId === 'all' && (
+                      <Check size={15} className="text-white stroke-[2.5]" />
+                    )}
+                  </div>
+                </button>
+
                 {/* Notes (Default) */}
                 <button
                   onClick={() => {

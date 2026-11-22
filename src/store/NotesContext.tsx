@@ -661,7 +661,10 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const noteFolder = note.folderId || 'default';
         const isChecklist = isChecklistNote(note);
 
-        if (selectedFolderId === 'default') {
+        if (selectedFolderId === 'all') {
+          // All Notes shows all active notes and checklists across all folders
+          return true;
+        } else if (selectedFolderId === 'default') {
           // Main Notes section contains default notes and legacy quick/all (excluding checklists)
           if (isChecklist) return false;
           if (noteFolder !== 'default' && noteFolder !== 'quick' && noteFolder !== 'all') {

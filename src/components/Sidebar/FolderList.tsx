@@ -11,6 +11,7 @@ import {
   Sparkles,
   Pencil,
   ListTodo,
+  Files,
 } from 'lucide-react';
 import { useNotes } from '../../store/NotesContext';
 import { CURRENT_VERSION } from '../../utils/updateChecker';
@@ -73,6 +74,7 @@ export const FolderList: React.FC<FolderListProps> = ({ onCheckUpdates, hasUpdat
   }, [contextMenu]);
 
   // Calculate note counts
+  const allNotesCount = notes.filter(n => !n.isTrash).length;
   const checklistsCount = notes.filter(
     n => !n.isTrash && isChecklistNote(n) && (n.folderId === 'checklists' || n.folderId === 'default' || !n.folderId)
   ).length;
@@ -165,6 +167,26 @@ export const FolderList: React.FC<FolderListProps> = ({ onCheckUpdates, hasUpdat
             Library
           </div>
           <div className="space-y-0.5">
+            <button
+              onClick={() => {
+                triggerHaptic();
+                setSelectedFolderId('all');
+              }}
+              className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs transition-colors ${
+                selectedFolderId === 'all'
+                  ? 'bg-apple-yellow dark:bg-[#253D56] text-white font-medium shadow-xs'
+                  : 'text-[#1C2B36] dark:text-[#CBD8E3] hover:bg-[#E5DCCB] dark:hover:bg-[#1A2530]'
+              }`}
+            >
+              <div className="flex items-center space-x-2 truncate">
+                <Files size={15} className={selectedFolderId === 'all' ? 'text-white' : 'text-[#395060] dark:text-[#7EAAD0]'} />
+                <span className="truncate">All Notes</span>
+              </div>
+              <span className={`text-[11px] ${selectedFolderId === 'all' ? 'text-white/80' : 'text-[#485B6D] dark:text-[#95ACC0] font-medium'}`}>
+                {allNotesCount}
+              </span>
+            </button>
+
             <button
               onClick={() => {
                 triggerHaptic();

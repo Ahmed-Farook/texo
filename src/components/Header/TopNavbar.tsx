@@ -118,7 +118,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
   const noteToExport = activeNote;
 
   return (
-    <header className="h-12 border-b border-apple-border dark:border-apple-borderDark bg-[#F2ECE0]/95 dark:bg-[#151E28]/95 backdrop-blur-md flex items-center justify-between pr-3 shrink-0 select-none transition-colors pt-[env(safe-area-inset-top)] [app-region:drag] relative z-40">
+    <header className="min-h-[48px] h-[calc(48px+env(safe-area-inset-top,0px))] pt-[env(safe-area-inset-top,0px)] border-b border-apple-border dark:border-apple-borderDark bg-[#F2ECE0]/95 dark:bg-[#151E28]/95 backdrop-blur-md flex items-center justify-between px-2 sm:px-3 shrink-0 select-none transition-colors [app-region:drag] relative z-40">
       {/* Left controls: Traffic light clearance on Mac + navigation */}
       <div className="flex items-center space-x-1.5 [app-region:no-drag]">
         {/* Dedicated clearance spacer for macOS window traffic lights */}
@@ -231,13 +231,13 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
           type="button"
           onClick={() => importInputRef.current?.click()}
           title="Import Notes (.txt, .md, .zip)"
-          className="hidden md:flex p-1.5 rounded-md hover:bg-neutral-200 dark:hover:bg-neutral-800 text-neutral-600 dark:text-neutral-300 transition-colors active:scale-95"
+          className="p-1.5 rounded-md hover:bg-neutral-200 dark:hover:bg-neutral-800 text-neutral-600 dark:text-neutral-300 transition-colors active:scale-95"
         >
           <Upload size={17} />
         </button>
 
         {/* Export dropdown */}
-        <div className="relative hidden md:block" ref={exportRef}>
+        <div className="relative" ref={exportRef}>
           <button
             type="button"
             onClick={(e) => {
@@ -459,7 +459,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
         <button
           onClick={toggleTheme}
           title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-          className="hidden md:flex p-1.5 rounded-md hover:bg-neutral-200 dark:hover:bg-neutral-800 text-neutral-600 dark:text-neutral-300 transition-colors active:scale-95"
+          className="p-1.5 rounded-md hover:bg-neutral-200 dark:hover:bg-neutral-800 text-neutral-600 dark:text-neutral-300 transition-colors active:scale-95"
         >
           {theme === 'dark' ? <Sun size={17} className="text-yellow-400" /> : <Moon size={17} />}
         </button>
@@ -487,14 +487,14 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
             key="mobile-nav-update-btn"
             onClick={() => onCheckUpdates?.()}
             title="Check for Software Updates"
-            className={`md:hidden flex items-center space-x-1 px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors duration-150 active:scale-95 outline-none focus:outline-none focus:ring-0 ${
+            className={`md:hidden flex items-center p-1.5 rounded-md text-xs font-semibold transition-colors duration-150 active:scale-95 outline-none focus:outline-none focus:ring-0 ${
               hasUpdate
-                ? 'bg-amber-500/20 border border-amber-500/40 text-amber-600 dark:text-amber-400 animate-pulse'
-                : 'bg-[#E5DCCB]/70 dark:bg-[#1C2733] text-[#1C2B36] dark:text-[#E8EEF3] hover:bg-[#E5DCCB] dark:hover:bg-[#25394C] border border-[#DFD3C0]/60 dark:border-[#263747]'
+                ? 'bg-amber-500/20 border border-amber-500/40 text-amber-600 dark:text-amber-400 animate-pulse px-2 space-x-1'
+                : 'text-[#5A6D7E] dark:text-[#8AA0B4] hover:bg-[#E5DCCB] dark:hover:bg-[#1C2733]'
             }`}
           >
-            <Sparkles size={14} className={hasUpdate ? 'text-amber-500 animate-spin' : 'text-[#395060] dark:text-[#7EAAD0]'} />
-            <span>{hasUpdate ? 'Update' : 'Updates'}</span>
+            <Sparkles size={16} className={hasUpdate ? 'text-amber-500 animate-spin' : 'text-[#395060] dark:text-[#7EAAD0]'} />
+            {hasUpdate && <span>Update</span>}
           </button>
         )}
 

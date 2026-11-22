@@ -4,6 +4,7 @@ const NOTES_STORAGE_KEY = 'apple_notes_data_v1';
 const FOLDERS_STORAGE_KEY = 'apple_notes_folders_v1';
 
 export const SYSTEM_FOLDERS: Folder[] = [
+  { id: 'all', name: 'All Notes', isSystem: true },
   { id: 'default', name: 'Notes', isSystem: true },
   { id: 'checklists', name: 'Checklists', isSystem: true },
   { id: 'trash', name: 'Recently Deleted', isSystem: true },
@@ -89,8 +90,8 @@ export const loadStoredNotes = (): Note[] => {
         !updated.content.includes('<canvas')
       );
 
-      // Auto-recover any note that has drawing strokes or rich content and was erroneously marked as checklist or moved to checklists
-      if (hasDrawingStrokes && (updated.isChecklist || updated.folderId === 'checklists')) {
+      // Auto-recover any note that has drawing strokes or non-checklist rich content and was erroneously marked as checklist or moved to checklists
+      if ((hasDrawingStrokes || !isPureChecklistContent) && (updated.isChecklist === true || updated.folderId === 'checklists')) {
         hasMigration = true;
         updated = {
           ...updated,
