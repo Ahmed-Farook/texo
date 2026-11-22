@@ -264,7 +264,7 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       }
       return prevId;
     });
-    setSelectedFolderIdState(folderId);
+    setSelectedFolderIdState(folderId === 'all' ? 'default' : folderId);
   }, [user]);
 
   const isSyncingRef = useRef(false);
@@ -661,28 +661,16 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const noteFolder = note.folderId || 'default';
         const isChecklist = isChecklistNote(note);
 
-        if (selectedFolderId === 'all') {
-          // All Notes shows all active notes and checklists across all folders
-          return true;
-        } else if (selectedFolderId === 'default') {
-          // Main Notes section contains default notes and legacy quick/all (excluding checklists)
+        if (selectedFolderId === 'default') {
+          // Main Notes section contains EVERY note that is not a checklist
           if (isChecklist) return false;
-          if (noteFolder !== 'default' && noteFolder !== 'quick' && noteFolder !== 'all') {
-            // Show orphaned notes (whose custom folder was deleted) so they aren't invisible
-            const isKnownFolder = noteFolder === 'checklists' || noteFolder === 'trash' || folders.some(f => f.id === noteFolder);
-            if (isKnownFolder) return false;
-            return true; // Orphaned note → surface here
-          }
+          return true;
         } else if (selectedFolderId === 'checklists') {
-          // Checklists section shows checklists in checklists folder or any checklist in default section
+          // Checklists section contains EVERY checklist
           if (!isChecklist) return false;
-          if (noteFolder !== 'checklists' && noteFolder !== 'default' && noteFolder !== 'quick' && noteFolder !== 'all') {
-            // Show orphaned checklists (whose custom folder was deleted) so they aren't invisible
-            const isKnownFolder = noteFolder === 'trash' || folders.some(f => f.id === noteFolder);
-            if (isKnownFolder) return false;
-            return true; // Orphaned checklist → surface here
-          }
+          return true;
         } else {
+          // Custom folder (e.g. 'work', 'personal', etc.)
           if (noteFolder !== selectedFolderId) return false;
         }
       }
