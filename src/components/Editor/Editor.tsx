@@ -29,7 +29,7 @@ import { CustomCodeBlock } from '../../extensions/CodeBlockExtension';
 import { checkBiometricsAvailable, BiometricCheckResult } from '../../utils/biometrics';
 import { compressImageFile } from '../../utils/imageCompressor';
 import { ChecklistEditor } from './ChecklistEditor';
-import { isChecklistNote } from '../../utils/storage';
+import { isChecklistNote, hasRichNoteContent } from '../../utils/storage';
 import type { Note } from '../../types/note';
 
 const activeNoteModuleRef = { current: null as Note | null };
@@ -701,8 +701,8 @@ export const Editor: React.FC<EditorProps> = ({ showToolbar, onRegisterToggleChe
     };
   }, [isSharedPreview, triggerSaveRequiredNotice]);
 
-  // Pure checklist mode: strictly checkboxes, no drawing, no complex formatters
-  const isChecklistFile = isChecklistNote(activeNote);
+  // Pure checklist mode: strictly checkboxes, no drawing, no complex formatters (never applies to rich notes)
+  const isChecklistFile = isChecklistNote(activeNote) && !hasRichNoteContent(activeNote?.content);
 
   const handleUnlockSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1163,9 +1163,15 @@ export const Editor: React.FC<EditorProps> = ({ showToolbar, onRegisterToggleChe
       const currentNote = activeNoteRef.current;
       // Only process when document actually changed from user edits
       if (!currentNote || isUpdatingRef.current || !transaction.docChanged) return;
+      if (activeNote?.id !== currentNote.id) return;
 
       const html = editor.getHTML();
       if (html === currentNote.content) return;
+
+      // Safety guard: Never overwrite existing rich content (>50 chars) with empty <p></p> during note switch or blur
+      if (currentNote.content && currentNote.content.length > 50 && (html === '<p></p>' || html.trim() === '')) {
+        return;
+      }
 
       const text = editor.getText();
 
@@ -1906,6 +1912,8 @@ export const Editor: React.FC<EditorProps> = ({ showToolbar, onRegisterToggleChe
 
                     const updates: any = {
                       drawingStrokes: strokesJson,
+                      isChecklist: false,
+                      folderId: currentNote.folderId === 'checklists' ? 'default' : currentNote.folderId,
                     };
 
                     // If note has no custom title or is 'New Note', and user drew something

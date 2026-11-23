@@ -3,6 +3,7 @@ import { Note } from '../../types/note';
 import { triggerHaptic } from '../../utils/haptics';
 import { syncNoteToAndroidWidget } from '../../utils/widgetSync';
 import { useNotes } from '../../store/NotesContext';
+import { hasRichNoteContent } from '../../utils/storage';
 import { Check, ChevronDown, X } from 'lucide-react';
 
 interface ChecklistItem {
@@ -177,6 +178,12 @@ export const ChecklistEditor: React.FC<ChecklistEditorProps> = ({
   // Persist and synchronize to storage and Android home screen widget
   const commitChanges = useCallback(
     (newTitle: string, newActive: ChecklistItem[], newCompleted: ChecklistItem[]) => {
+      // SAFETY GUARD: If activeTasks and completedTasks are both empty, but note.content originally had text,
+      // NEVER overwrite the note with an empty checklist!
+      if (newActive.length === 0 && newCompleted.length === 0 && (hasRichNoteContent(note.content) || (note.content && note.content.length > 50))) {
+        return;
+      }
+
       const serialized = serializeChecklistHtml(newTitle, newActive, newCompleted);
       lastSavedHtmlRef.current = serialized;
 

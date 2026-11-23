@@ -6,6 +6,7 @@ export interface Note {
   drawingStrokes?: string; // JSON string of DrawingStroke[] for seamless in-note stylus annotations
   folderId: string;
   isChecklist?: boolean; // persistent flag indicating this note is a checklist
+  previousContentBackup?: string; // safety snapshot of rich content if accidentally overwritten
   isPinned: boolean;
   isTrash?: boolean;
   deletedAt?: number; // timestamp when moved to Recently Deleted for 7-day auto-purge

@@ -19,6 +19,7 @@ import {
   SYSTEM_FOLDERS,
   INITIAL_NOTES,
   isChecklistNote,
+  hasRichNoteContent,
 } from '../utils/storage';
 import { triggerHaptic } from '../utils/haptics';
 import { useAuth } from './AuthContext';
@@ -211,29 +212,11 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   foldersRef.current = folders;
   const cloudSaveTimers = useRef<Record<string, NodeJS.Timeout>>({});
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
-  // Tracks newly created notes that haven't received any edits yet so exiting discards them cleanly
-  const uneditedNewNoteIdsRef = useRef<Set<string>>(new Set());
-  // Tracks note IDs confirmed present in the cloud to cleanly detect deletions across devices
-  const syncedNoteIdsRef = useRef<Set<string>>(
-    (() => {
-      try {
-        const raw = localStorage.getItem('apple_notes_synced_ids_v1');
-        if (raw) {
-          const arr = JSON.parse(raw);
-          if (Array.isArray(arr)) return new Set<string>(arr);
-        }
-      } catch (_) {}
-      return new Set<string>();
-    })()
-  );
 
   const setActiveNoteId = useCallback((nextId: string | null) => {
     setActiveNoteIdState((prevId) => {
       if (prevId && prevId !== nextId) {
-        if (uneditedNewNoteIdsRef.current.has(prevId)) {
-          uneditedNewNoteIdsRef.current.delete(prevId);
-          setNotes((curr) => curr.filter((n) => n.id !== prevId));
-        } else if (cloudSaveTimers.current[prevId]) {
+        if (cloudSaveTimers.current[prevId]) {
           clearTimeout(cloudSaveTimers.current[prevId]);
           delete cloudSaveTimers.current[prevId];
           const target = notesRef.current.find((n) => n.id === prevId);
@@ -248,18 +231,12 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   const setSelectedFolderId = useCallback((folderId: string) => {
     setActiveNoteIdState((prevId) => {
-      if (prevId) {
-        if (uneditedNewNoteIdsRef.current.has(prevId)) {
-          uneditedNewNoteIdsRef.current.delete(prevId);
-          setNotes((curr) => curr.filter((n) => n.id !== prevId));
-          return null;
-        } else if (cloudSaveTimers.current[prevId]) {
-          clearTimeout(cloudSaveTimers.current[prevId]);
-          delete cloudSaveTimers.current[prevId];
-          const target = notesRef.current.find((n) => n.id === prevId);
-          if (target && user && encryptionKeyRef.current) {
-            upsertNoteToCloud(target, user.id, encryptionKeyRef.current);
-          }
+      if (prevId && cloudSaveTimers.current[prevId]) {
+        clearTimeout(cloudSaveTimers.current[prevId]);
+        delete cloudSaveTimers.current[prevId];
+        const target = notesRef.current.find((n) => n.id === prevId);
+        if (target && user && encryptionKeyRef.current) {
+          upsertNoteToCloud(target, user.id, encryptionKeyRef.current);
         }
       }
       return prevId;
@@ -305,20 +282,10 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         effectiveRemoteNotes = INITIAL_NOTES;
       }
 
-      const syncedIds = syncedNoteIdsRef.current;
       const { merged: mergedNotes, toUpload: notesToUpload } = mergeNotes(
         notesRef.current,
-        effectiveRemoteNotes,
-        syncedIds.size > 0 ? syncedIds : undefined
+        effectiveRemoteNotes
       );
-
-      // Track all current remote notes in synced IDs
-      for (const r of effectiveRemoteNotes) {
-        syncedIds.add(r.id);
-      }
-      try {
-        localStorage.setItem('apple_notes_synced_ids_v1', JSON.stringify(Array.from(syncedIds)));
-      } catch (_) {}
       const { merged: mergedFolders, toUpload: foldersToUpload } = mergeFolders(
         foldersRef.current,
         remoteFolders
@@ -367,13 +334,16 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   // Recover orphaned notes whose folderId points to a non-existent folder
   useEffect(() => {
+    if (!folders || folders.length === 0) return;
     const knownFolderIds = new Set(['default', 'checklists', 'trash', ...folders.map(f => f.id)]);
     setNotes(prev => {
       let changed = false;
       const fixed = prev.map(n => {
         if (n.folderId && !n.isTrash && !knownFolderIds.has(n.folderId)) {
           changed = true;
-          return { ...n, folderId: isChecklistNote(n) ? 'checklists' : 'default', updatedAt: Date.now() };
+          // Normal notes must go to 'default'; only pure checklist notes go to 'checklists'
+          const isChecklist = isChecklistNote(n) && !hasRichNoteContent(n.content);
+          return { ...n, folderId: isChecklist ? 'checklists' : 'default', updatedAt: Date.now() };
         }
         return n;
       });
@@ -399,9 +369,19 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             setNotes(prev => {
               const idx = prev.findIndex(n => n.id === remoteNote.id);
               if (idx >= 0) {
-                if (remoteNote.updatedAt >= prev[idx].updatedAt) {
+                const localNote = prev[idx];
+                // Safety guard: if local note has rich content, do NOT let remote turn it into a checklist or wipe content
+                if (hasRichNoteContent(localNote.content) && !hasRichNoteContent(remoteNote.content)) {
+                  return prev;
+                }
+                if (remoteNote.updatedAt >= localNote.updatedAt) {
                   const copy = [...prev];
-                  copy[idx] = remoteNote;
+                  const isRich = hasRichNoteContent(remoteNote.content);
+                  copy[idx] = {
+                    ...remoteNote,
+                    isChecklist: isRich ? false : remoteNote.isChecklist,
+                    folderId: (isRich && remoteNote.folderId === 'checklists') ? 'default' : remoteNote.folderId,
+                  };
                   return copy;
                 }
                 return prev;
@@ -569,11 +549,11 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     return () => clearInterval(interval);
   }, [user]);
 
-  // Snappy debounced persistence: never blocks typing or UI updates (and skips unedited drafts)
+  // Snappy debounced persistence: never blocks typing or UI updates
   useEffect(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      saveStoredNotes(notes.filter((n) => !uneditedNewNoteIdsRef.current.has(n.id)));
+      saveStoredNotes(notes);
     }, 250);
 
     return () => {
@@ -586,7 +566,7 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const handleFlush = () => {
       if (saveTimerRef.current) {
         clearTimeout(saveTimerRef.current);
-        saveStoredNotes(notes.filter((n) => !uneditedNewNoteIdsRef.current.has(n.id)));
+        saveStoredNotes(notes);
       }
       if (user && encryptionKeyRef.current) {
         for (const noteId of Object.keys(cloudSaveTimers.current)) {
@@ -736,7 +716,6 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       updatedAt: Date.now(),
     };
 
-    uneditedNewNoteIdsRef.current.add(newNote.id);
     setNotes(prev => [newNote, ...prev]);
     setActiveNoteId(newNote.id);
     setMobileView('editor');
@@ -767,15 +746,37 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             (updates.isTrash !== undefined && updates.isTrash !== note.isTrash) ||
             (updates.folderId !== undefined && updates.folderId !== note.folderId);
 
-          if (hasContentChanged) {
-            uneditedNewNoteIdsRef.current.delete(id);
+          const newUpdatedAt = hasContentChanged ? Date.now() : (updates.updatedAt ?? note.updatedAt);
+
+          // Content safety guard: If an update attempts to replace a non-trivial note with an empty string or empty checklist,
+          // preserve the previous content in previousContentBackup
+          let previousContentBackup = note.previousContentBackup;
+          if (
+            note.content &&
+            note.content.length > 50 &&
+            updates.content !== undefined &&
+            updates.content !== note.content &&
+            (updates.content.trim().length === 0 ||
+              updates.content === '<p></p>' ||
+              (updates.content.includes('<ul data-type="taskList"') && !hasRichNoteContent(updates.content)))
+          ) {
+            previousContentBackup = note.content;
           }
 
-          const newUpdatedAt = hasContentChanged ? Date.now() : (updates.updatedAt ?? note.updatedAt);
+          // Strict type isolation: if a note has rich content or drawing strokes, it is NEVER a checklist
+          const willHaveRichContent = updates.content !== undefined ? hasRichNoteContent(updates.content) : hasRichNoteContent(note.content);
+          const hasDrawing = Boolean((updates.drawingStrokes ?? note.drawingStrokes) && (updates.drawingStrokes ?? note.drawingStrokes) !== '[]' && (updates.drawingStrokes ?? note.drawingStrokes) !== '{}');
+          const finalIsChecklist = (willHaveRichContent || hasDrawing) ? false : (updates.isChecklist ?? note.isChecklist);
+          const finalFolderId = (finalIsChecklist === false && (updates.folderId === 'checklists' || note.folderId === 'checklists'))
+            ? 'default'
+            : (updates.folderId ?? note.folderId);
 
           const updated: Note = {
             ...note,
             ...updates,
+            isChecklist: finalIsChecklist,
+            folderId: finalFolderId,
+            previousContentBackup,
             updatedAt: newUpdatedAt,
           };
 
@@ -990,17 +991,6 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const deleteNote = useCallback((id: string) => {
     const target = notesRef.current.find(n => n.id === id);
     if (!target) return;
-
-    // If it's an untouched new draft, simply discard it silently
-    if (uneditedNewNoteIdsRef.current.has(id)) {
-      uneditedNewNoteIdsRef.current.delete(id);
-      setNotes(prev => prev.filter(n => n.id !== id));
-      if (activeNoteId === id) {
-        setActiveNoteIdState(null);
-        setMobileView('list');
-      }
-      return;
-    }
 
     triggerHaptic();
     if (target.isTrash) {
@@ -1443,12 +1433,6 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     setNotes(prev => prev.filter(n => !idsToRemove.has(n.id)));
     if (user) {
       idsToRemove.forEach(id => deleteNoteFromCloud(id));
-      for (const id of idsToRemove) {
-        syncedNoteIdsRef.current.delete(id);
-      }
-      try {
-        localStorage.setItem('apple_notes_synced_ids_v1', JSON.stringify(Array.from(syncedNoteIdsRef.current)));
-      } catch (_) {}
     }
 
     if (activeNoteId && idsToRemove.has(activeNoteId)) {

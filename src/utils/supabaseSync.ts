@@ -1,7 +1,7 @@
 import { Note, Folder } from '../types/note';
 import { supabase } from '../lib/supabase';
 import { encryptText, decryptText } from './crypto';
-import { isChecklistNote } from './storage';
+import { isChecklistNote, hasRichNoteContent } from './storage';
 
 export interface DbNote {
   id: string;
@@ -29,27 +29,19 @@ export interface DbFolder {
  * Encrypts and formats a Note for PostgreSQL storage.
  */
 export async function noteToDb(note: Note, userId: string, key: CryptoKey | null): Promise<DbNote> {
-  // Bundle handwritten drawing strokes, checklist state, trash deletion timestamp, and lock metadata securely with content
-  const isChecklist = isChecklistNote(note);
-  const needsBundle = Boolean(
-    isChecklist ||
-    note.drawingStrokes ||
-    note.deletedAt ||
-    note.isLocked ||
-    note.passwordHash ||
-    note.passwordHint
-  );
-  const rawContent = needsBundle
-    ? JSON.stringify({
-        html: note.content || '',
-        ...(isChecklist ? { isChecklist: true } : {}),
-        ...(note.drawingStrokes ? { strokes: note.drawingStrokes } : {}),
-        ...(note.deletedAt ? { deletedAt: note.deletedAt } : {}),
-        ...(note.isLocked ? { isLocked: note.isLocked } : {}),
-        ...(note.passwordHash ? { passwordHash: note.passwordHash } : {}),
-        ...(note.passwordHint ? { passwordHint: note.passwordHint } : {}),
-      })
-    : note.content || '';
+  // Bundle handwritten drawing strokes, checklist state, backup, trash deletion timestamp, and lock metadata securely with content
+  const isChecklist = isChecklistNote(note) && !hasRichNoteContent(note.content);
+  const targetFolder = isChecklist ? 'checklists' : (note.folderId === 'checklists' ? 'default' : (note.folderId || 'default'));
+  const rawContent = JSON.stringify({
+    html: note.content || '',
+    isChecklist,
+    ...(note.drawingStrokes ? { strokes: note.drawingStrokes } : {}),
+    ...(note.previousContentBackup ? { previousContentBackup: note.previousContentBackup } : {}),
+    ...(note.deletedAt ? { deletedAt: note.deletedAt } : {}),
+    ...(note.isLocked ? { isLocked: note.isLocked } : {}),
+    ...(note.passwordHash ? { passwordHash: note.passwordHash } : {}),
+    ...(note.passwordHint ? { passwordHint: note.passwordHint } : {}),
+  });
 
   const [encryptedTitle, encryptedContent, encryptedPreview] = await Promise.all([
     encryptText(note.title || '', key),
@@ -62,7 +54,7 @@ export async function noteToDb(note: Note, userId: string, key: CryptoKey | null
     title: encryptedTitle,
     content: encryptedContent,
     plain_text_preview: encryptedPreview,
-    folder_id: note.folderId || 'default',
+    folder_id: targetFolder,
     is_pinned: Boolean(note.isPinned),
     is_trash: Boolean(note.isTrash),
     created_at: note.createdAt || Date.now(),
@@ -89,9 +81,10 @@ export async function dbToNote(db: DbNote, key: CryptoKey | null): Promise<Note>
   let isLocked: boolean | undefined = undefined;
   let passwordHash: string | undefined = undefined;
   let passwordHint: string | undefined = undefined;
-  let isChecklist: boolean | undefined = db.folder_id === 'checklists' ? true : undefined;
+  let isChecklist: boolean | undefined = undefined;
+  let previousContentBackup: string | undefined = undefined;
 
-  // Unpack bundled drawing strokes / checklist flag / deletedAt / lock metadata if present
+  // Unpack bundled drawing strokes / checklist flag / backup / deletedAt / lock metadata if present
   if (content && typeof content === 'string' && content.startsWith('{"html":')) {
     try {
       const parsed = JSON.parse(content);
@@ -99,6 +92,9 @@ export async function dbToNote(db: DbNote, key: CryptoKey | null): Promise<Note>
       drawingStrokes = parsed.strokes;
       if (typeof parsed.isChecklist === 'boolean') {
         isChecklist = parsed.isChecklist;
+      }
+      if (typeof parsed.previousContentBackup === 'string') {
+        previousContentBackup = parsed.previousContentBackup;
       }
       if (typeof parsed.deletedAt === 'number') {
         deletedAt = parsed.deletedAt;
@@ -117,12 +113,18 @@ export async function dbToNote(db: DbNote, key: CryptoKey | null): Promise<Note>
 
   let folderId = db.folder_id || 'default';
 
-  // A note with drawing strokes can NEVER be a checklist
-  if (drawingStrokes && drawingStrokes.length > 2 && drawingStrokes !== '[]' && drawingStrokes !== '{}') {
+  // Strict check: if the note has rich content or drawing strokes, it can NEVER be a checklist
+  const isRich = hasRichNoteContent(content);
+  const hasDrawing = Boolean(drawingStrokes && drawingStrokes !== '[]' && drawingStrokes !== '{}');
+
+  if (isRich || hasDrawing) {
     isChecklist = false;
     if (folderId === 'checklists') {
       folderId = 'default';
     }
+  } else if (isChecklist === undefined) {
+    // Only checklist if explicitly in checklists folder AND has taskList content
+    isChecklist = folderId === 'checklists' && Boolean(content && content.includes('data-type="taskList"'));
   }
 
   return {
@@ -130,6 +132,7 @@ export async function dbToNote(db: DbNote, key: CryptoKey | null): Promise<Note>
     title,
     content,
     drawingStrokes,
+    previousContentBackup,
     plainTextPreview,
     folderId,
     isChecklist,
@@ -379,12 +382,12 @@ export async function deleteFolderFromCloud(folderId: string): Promise<void> {
 }
 
 /**
- * Merge local and remote notes using last-write-wins (updatedAt) and tombstone/synced tracking
+ * Merge local and remote notes safely using last-write-wins (updatedAt).
+ * Local notes are never deleted based on remote absence, guaranteeing zero data loss.
  */
 export function mergeNotes(
   local: Note[],
-  remote: Note[],
-  syncedIds?: Set<string>
+  remote: Note[]
 ): { merged: Note[]; toUpload: Note[] } {
   const map = new Map<string, Note>();
   const toUpload: Note[] = [];
@@ -398,12 +401,7 @@ export function mergeNotes(
   for (const l of local) {
     const existing = map.get(l.id);
     if (!existing) {
-      // If note was previously confirmed synced to cloud but is now gone from cloud,
-      // it was deleted from another device. Do not resurrect it.
-      if (syncedIds && syncedIds.has(l.id)) {
-        continue;
-      }
-      // Brand new local note not in cloud -> upload to cloud
+      // Local note exists on this device: preserve it and queue for upload!
       map.set(l.id, l);
       toUpload.push(l);
     } else if (l.updatedAt > existing.updatedAt) {
