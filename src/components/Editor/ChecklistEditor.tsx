@@ -231,9 +231,8 @@ export const ChecklistEditor: React.FC<ChecklistEditorProps> = ({
   // Persist and synchronize to storage and Android home screen widget
   const commitChanges = useCallback(
     (newTitle: string, newActive: ChecklistItem[], newCompleted: ChecklistItem[]) => {
-      // SAFETY GUARD: If activeTasks and completedTasks are both empty, but note.content originally had text,
-      // NEVER overwrite the note with an empty checklist!
-      if (newActive.length === 0 && newCompleted.length === 0 && (hasRichNoteContent(note.content) || (note.content && note.content.length > 50))) {
+      // SAFETY GUARD: Never overwrite a note that has rich non-checklist HTML content with an empty checklist!
+      if (newActive.length === 0 && newCompleted.length === 0 && hasRichNoteContent(note.content)) {
         return;
       }
 
@@ -435,6 +434,7 @@ export const ChecklistEditor: React.FC<ChecklistEditorProps> = ({
     <div
       className="tiptap prose prose-neutral dark:prose-invert max-w-none focus:outline-none min-h-[140px] pb-32 select-text"
       data-pdf-note-id={note.id}
+      data-checklist-editor="true"
     >
       {/* Checklist Title Heading with generous 1-line breathing room (2.75rem / 44px) matching standard notes */}
       <h1 className="mb-11" style={{ marginBottom: '2.75rem' }}>

@@ -764,17 +764,16 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
           const newUpdatedAt = hasContentChanged ? Date.now() : (updates.updatedAt ?? note.updatedAt);
 
-          // Content safety guard: If an update attempts to replace a non-trivial note with an empty string or empty checklist,
+          // Content safety guard: If an update attempts to replace non-empty text with empty HTML / empty checklist,
           // preserve the previous content in previousContentBackup
+          const stripHtml = (h?: string) => (h || '').replace(/<[^>]*>/g, '').trim();
           let previousContentBackup = note.previousContentBackup;
           if (
             note.content &&
-            note.content.length > 50 &&
+            stripHtml(note.content).length > 5 &&
             updates.content !== undefined &&
             updates.content !== note.content &&
-            (updates.content.trim().length === 0 ||
-              updates.content === '<p></p>' ||
-              (updates.content.includes('<ul data-type="taskList"') && !hasRichNoteContent(updates.content)))
+            stripHtml(updates.content).length === 0
           ) {
             previousContentBackup = note.content;
           }

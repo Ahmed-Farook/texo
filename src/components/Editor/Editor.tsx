@@ -492,30 +492,6 @@ const EnforceTitleExtension = Extension.create({
             return tr;
           }
 
-          // CHECKLIST MODE ENFORCEMENT: Ensure taskList exists
-          if (isChecklistNote(activeNoteModuleRef.current)) {
-            const taskListType = schema.nodes.taskList;
-            const taskItemType = schema.nodes.taskItem;
-            const paragraphType = schema.nodes.paragraph;
-
-            if (taskListType && taskItemType && paragraphType) {
-              let hasTaskList = false;
-              doc.forEach((child) => {
-                if (child.type.name === 'taskList') hasTaskList = true;
-              });
-
-              if (!hasTaskList) {
-                const newTaskList = taskListType.create(
-                  null,
-                  taskItemType.create({ checked: false }, paragraphType.create())
-                );
-                tr.insert(doc.content.size, newTaskList);
-                return tr;
-              }
-            }
-            return tr.docChanged ? tr : null;
-          }
-
           // If the document ends with a table, image, or mathBlock, automatically append an empty paragraph after it
           const last = doc.lastChild;
           if (last && (last.type.name === 'table' || last.type.name === 'image' || last.type.name === 'mathBlock')) {
@@ -1033,6 +1009,7 @@ export const Editor: React.FC<EditorProps> = ({ showToolbar, onRegisterToggleChe
   }, [activeNote?.drawingStrokes]);
 
   const isUpdatingRef = useRef(false);
+  const editorLoadedNoteIdRef = useRef<string | null>(null);
   const activeNoteRef = useRef(activeNote);
   activeNoteRef.current = activeNote;
   activeNoteModuleRef.current = activeNote;
@@ -1161,19 +1138,25 @@ export const Editor: React.FC<EditorProps> = ({ showToolbar, onRegisterToggleChe
     },
     onUpdate: ({ editor, transaction }) => {
       const currentNote = activeNoteRef.current;
-      // Only process when document actually changed from user edits
+      // Only process when document actually changed from real user edits on the loaded TipTap note
       if (!currentNote || isUpdatingRef.current || !transaction.docChanged) return;
-      if (activeNote?.id !== currentNote.id) return;
+      // CRITICAL: Never allow an unmounted/stale TipTap instance to overwrite a ChecklistEditor note
+      if (isChecklistNote(currentNote) && !hasRichNoteContent(currentNote.content)) return;
+      if (editorLoadedNoteIdRef.current !== currentNote.id) return;
 
       const html = editor.getHTML();
       if (html === currentNote.content) return;
 
-      // Safety guard: Never overwrite existing rich content (>50 chars) with empty <p></p> during note switch or blur
-      if (currentNote.content && currentNote.content.length > 50 && (html === '<p></p>' || html.trim() === '')) {
+      const text = editor.getText();
+      // Safety guard: Never let an unfocused/detaching editor wipe non-empty note content to empty
+      if (
+        !editor.isFocused &&
+        text.trim().length === 0 &&
+        currentNote.content &&
+        currentNote.content.replace(/<[^>]*>/g, '').trim().length > 5
+      ) {
         return;
       }
-
-      const text = editor.getText();
 
       // Extract title and snippet preview from text
       const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
@@ -1209,6 +1192,8 @@ export const Editor: React.FC<EditorProps> = ({ showToolbar, onRegisterToggleChe
   useEffect(() => {
     if (!editor) return;
     const handleQuickAdd = () => {
+      const current = activeNoteRef.current;
+      if (!current || (isChecklistNote(current) && !hasRichNoteContent(current.content))) return;
       setTimeout(() => {
         editor.chain().focus('end').splitBlock().toggleTaskList().run();
       }, 100);
@@ -1228,12 +1213,19 @@ export const Editor: React.FC<EditorProps> = ({ showToolbar, onRegisterToggleChe
 
   // Update editor content and editable state when active note changes or remote sync arrives
   useEffect(() => {
-    if (!editor || !activeNote) return;
+    if (!editor || !activeNote) {
+      editorLoadedNoteIdRef.current = null;
+      return;
+    }
+
+    // Checklist notes are managed exclusively by ChecklistEditor: disable TipTap completely!
+    if (isChecklistFile) {
+      editorLoadedNoteIdRef.current = null;
+      editor.setEditable(false);
+      return;
+    }
 
     editor.setEditable(!activeNote.isTrash && !isSharedPreview);
-
-    // Checklist notes are managed by dedicated ChecklistEditor
-    if (isChecklistFile) return;
 
     let contentToLoad = activeNote.content || '<p></p>';
     // Migrate legacy notes where title was saved as <h3> to <h1> (personal notes only)
@@ -1244,6 +1236,7 @@ export const Editor: React.FC<EditorProps> = ({ showToolbar, onRegisterToggleChe
 
     const currentHTML = editor.getHTML();
     if (currentHTML !== contentToLoad) {
+      editorLoadedNoteIdRef.current = null;
       isUpdatingRef.current = true;
 
       // Preserve cursor selection if editor is focused on this device
@@ -1251,6 +1244,7 @@ export const Editor: React.FC<EditorProps> = ({ showToolbar, onRegisterToggleChe
       const { from, to } = editor.state.selection;
 
       editor.commands.setContent(contentToLoad, false);
+      editorLoadedNoteIdRef.current = activeNote.id;
 
       if (isFocused) {
         try {
@@ -1264,13 +1258,15 @@ export const Editor: React.FC<EditorProps> = ({ showToolbar, onRegisterToggleChe
 
       const timer = setTimeout(() => {
         isUpdatingRef.current = false;
-      }, 50);
+      }, 60);
       return () => {
         clearTimeout(timer);
-        isUpdatingRef.current = false;
       };
+    } else {
+      editorLoadedNoteIdRef.current = activeNote.id;
+      isUpdatingRef.current = false;
     }
-  }, [activeNote?.id, activeNote?.content, activeNote?.isTrash, editor]);
+  }, [activeNote?.id, activeNote?.content, activeNote?.isTrash, isChecklistFile, isSharedPreview, editor, updateNote]);
 
   // Dismiss cursor and blur editor when keyboard closes on mobile
   useEffect(() => {
@@ -1424,72 +1420,21 @@ export const Editor: React.FC<EditorProps> = ({ showToolbar, onRegisterToggleChe
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [searchQuery, totalMatches, currentMatchIndex]);
 
-  // Focuses or creates a clean typing line below existing content (picture, table, text, checklist)
+  // Focuses or creates a clean typing line below existing content (picture, table, text) in TipTap notes
   const handleFocusOrCreateLineBelow = useCallback(() => {
-    if (!editor || activeNote?.isTrash || isPenMode) return;
+    if (!editor || activeNote?.isTrash || isPenMode || isChecklistFile) return;
 
     // Do NOT move cursor or clear selection if user was dragging or has an active text selection
     if (isMouseSelectingRef.current) return;
     const domSel = window.getSelection();
     if (domSel && domSel.toString().length > 0) return;
     if (!editor.state.selection.empty) return;
+    if (editorLoadedNoteIdRef.current !== activeNote?.id) return;
 
     const { state, view } = editor;
     const { doc, schema, tr } = state;
     const paragraphType = schema.nodes.paragraph;
     if (!paragraphType) return;
-
-    if (isChecklistFile) {
-      let lastTaskItemPos = -1;
-      let lastTaskItemNode: any = null;
-
-      doc.descendants((node, pos) => {
-        if (node.type.name === 'taskItem') {
-          lastTaskItemPos = pos;
-          lastTaskItemNode = node;
-        }
-      });
-
-      if (!lastTaskItemNode || lastTaskItemPos === -1) {
-        // Document has no task items yet: append the first one
-        const taskListType = schema.nodes.taskList;
-        const taskItemType = schema.nodes.taskItem;
-        const pType = schema.nodes.paragraph;
-        if (taskListType && taskItemType && pType) {
-          const newTaskList = taskListType.create(
-            null,
-            taskItemType.create({ checked: false }, pType.create())
-          );
-          const newTr = tr.insert(doc.content.size, newTaskList);
-          view.dispatch(newTr);
-          editor.chain().focus('end').run();
-        }
-        return;
-      }
-
-      const hasContent = lastTaskItemNode.textContent.trim().length > 0;
-
-      if (!hasContent) {
-        // If the last checkbox is empty, move cursor back to it without creating another!
-        const targetPos = lastTaskItemPos + lastTaskItemNode.nodeSize - 1;
-        editor.chain().focus().setTextSelection(targetPos).run();
-        return;
-      } else {
-        // If the last checkbox has content, create a new checkbox immediately below it!
-        const taskItemType = schema.nodes.taskItem;
-        const pType = schema.nodes.paragraph;
-        if (taskItemType && pType) {
-          const insertPos = lastTaskItemPos + lastTaskItemNode.nodeSize;
-          const newTaskItem = taskItemType.create({ checked: false }, pType.create());
-          const newTr = tr.insert(insertPos, newTaskItem);
-          const targetCursorPos = insertPos + 2;
-          newTr.setSelection(Selection.near(newTr.doc.resolve(targetCursorPos), 1));
-          view.dispatch(newTr.scrollIntoView());
-          editor.commands.focus();
-        }
-        return;
-      }
-    }
 
     const lastChild = doc.lastChild;
 
@@ -1505,7 +1450,7 @@ export const Editor: React.FC<EditorProps> = ({ showToolbar, onRegisterToggleChe
     const newTr = tr.insert(endPos, paragraphType.create());
     view.dispatch(newTr);
     editor.chain().focus('end').run();
-  }, [editor, activeNote?.isTrash, isPenMode]);
+  }, [editor, activeNote?.id, activeNote?.isTrash, isPenMode, isChecklistFile]);
 
   if (!activeNote) {
     return (
@@ -1772,7 +1717,7 @@ export const Editor: React.FC<EditorProps> = ({ showToolbar, onRegisterToggleChe
               triggerSaveRequiredNotice();
               return;
             }
-            if (editor && !activeNote.isTrash && !isPenMode) {
+            if (editor && !activeNote.isTrash && !isPenMode && !isChecklistFile) {
               // If this was a drag or there is an active text selection, do NOT clear selection!
               if (isMouseSelectingRef.current) {
                 isMouseSelectingRef.current = false;
@@ -1787,12 +1732,14 @@ export const Editor: React.FC<EditorProps> = ({ showToolbar, onRegisterToggleChe
               }
 
               const target = e.target as HTMLElement;
-              // Ignore if clicked on checkbox, label, select, or button
+              // Ignore if clicked on checkbox, label, input, textarea, select, button, or checklist container
               if (
                 target.closest('label') ||
                 target.tagName === 'INPUT' ||
+                target.tagName === 'TEXTAREA' ||
                 target.closest('select') ||
                 target.closest('button') ||
+                target.closest('[data-checklist-editor="true"]') ||
                 target.closest('.tiptap-table-controls') ||
                 target.closest('.katex-math-block')
               ) {

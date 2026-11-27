@@ -113,6 +113,22 @@ export async function dbToNote(db: DbNote, key: CryptoKey | null): Promise<Note>
 
   let folderId = db.folder_id || 'default';
 
+  // Auto-heal any cloud note that was wiped to empty HTML / empty taskList while carrying previousContentBackup
+  const strippedCurrent = (content || '').replace(/<[^>]*>/g, '').trim();
+  const strippedBackup = (previousContentBackup || '').replace(/<[^>]*>/g, '').trim();
+  if (
+    strippedCurrent.length === 0 &&
+    strippedBackup.length > 5 &&
+    (!drawingStrokes || drawingStrokes === '[]' || drawingStrokes === '{}')
+  ) {
+    content = previousContentBackup as string;
+    const h1Match = content.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+    if (h1Match && h1Match[1]) {
+      const recoveredTitle = h1Match[1].replace(/<[^>]*>/g, '').trim();
+      if (recoveredTitle) title = recoveredTitle;
+    }
+  }
+
   // Strict check: if the note has rich content or drawing strokes, it can NEVER be a checklist
   const isRich = hasRichNoteContent(content);
   const hasDrawing = Boolean(drawingStrokes && drawingStrokes !== '[]' && drawingStrokes !== '{}');

@@ -139,36 +139,45 @@ export const loadStoredNotes = (): Note[] => {
         updated = { ...updated, isPinned: false };
       }
 
-      // Check if this note was accidentally wiped into an empty checklist
-      const isPureEmptyChecklist = Boolean(
-        updated.content &&
-        updated.content.includes('<ul data-type="taskList"') &&
-        (!updated.plainTextPreview || updated.plainTextPreview.includes('0 tasks completed')) &&
-        !hasRichNoteContent(updated.content)
-      );
+      // Check if this note was accidentally wiped to empty HTML / empty checklist (e.g. "New Note" with blank data)
+      const stripText = (h?: string) => (h || '').replace(/<[^>]*>/g, '').trim();
+      const currentText = stripText(updated.content);
+      const isEffectivelyEmpty =
+        currentText.length === 0 &&
+        (!updated.drawingStrokes || updated.drawingStrokes === '[]' || updated.drawingStrokes === '{}');
 
-      // Attempt recovery from previousContentBackup or backupNotesMap
-      if (isPureEmptyChecklist && updated.title && updated.title !== 'To-Do List' && updated.title !== 'New Note') {
-        if (updated.previousContentBackup && updated.previousContentBackup.length > 50) {
+      // Attempt automatic recovery from previousContentBackup or rolling backup snapshot
+      if (isEffectivelyEmpty) {
+        const backupHtml =
+          updated.previousContentBackup && stripText(updated.previousContentBackup).length > 5
+            ? updated.previousContentBackup
+            : undefined;
+        const backupNote = backupNotesMap.get(updated.id);
+        const restoredHtml =
+          backupHtml ||
+          (backupNote && stripText(backupNote.content).length > 5 ? backupNote.content : undefined);
+
+        if (restoredHtml) {
           hasMigration = true;
+          const h1Match = restoredHtml.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+          const restoredTitle =
+            (h1Match && h1Match[1] ? h1Match[1].replace(/<[^>]*>/g, '').trim() : '') ||
+            (backupNote?.title && backupNote.title !== 'New Note' ? backupNote.title : '') ||
+            updated.title;
+          const isRestoredRich = hasRichNoteContent(restoredHtml);
+          const isRestoredChecklist =
+            !isRestoredRich &&
+            restoredHtml.includes('data-type="taskList"') &&
+            (updated.isChecklist === true || updated.folderId === 'checklists' || backupNote?.isChecklist === true);
+
           updated = {
             ...updated,
-            content: updated.previousContentBackup,
-            isChecklist: false,
-            folderId: updated.folderId === 'checklists' ? 'default' : updated.folderId,
+            content: restoredHtml,
+            title: restoredTitle || 'Recovered Note',
+            drawingStrokes: updated.drawingStrokes || backupNote?.drawingStrokes,
+            isChecklist: isRestoredChecklist,
+            folderId: isRestoredRich && updated.folderId === 'checklists' ? 'default' : (updated.folderId || 'default'),
           };
-        } else {
-          const backupVersion = backupNotesMap.get(updated.id);
-          if (backupVersion && backupVersion.content && backupVersion.content.length > updated.content.length) {
-            hasMigration = true;
-            updated = {
-              ...updated,
-              content: backupVersion.content,
-              drawingStrokes: updated.drawingStrokes || backupVersion.drawingStrokes,
-              isChecklist: false,
-              folderId: updated.folderId === 'checklists' ? 'default' : updated.folderId,
-            };
-          }
         }
       }
 
@@ -232,6 +241,28 @@ export const saveStoredNotes = (notes: Note[]): void => {
     localStorage.setItem(NOTES_STORAGE_KEY, raw);
     if (notes.length > 0) {
       try {
+        // Preserve rich non-empty snapshots in backup even if a note in `notes` was cleared
+        const existingBackupRaw = localStorage.getItem(NOTES_BACKUP_STORAGE_KEY);
+        if (existingBackupRaw) {
+          const prevBackupArr = JSON.parse(existingBackupRaw);
+          if (Array.isArray(prevBackupArr)) {
+            const prevMap = new Map<string, Note>();
+            prevBackupArr.forEach((bn: Note) => {
+              if (bn && bn.id) prevMap.set(bn.id, bn);
+            });
+            const mergedBackup = notes.map((n) => {
+              const curText = (n.content || '').replace(/<[^>]*>/g, '').trim();
+              const prev = prevMap.get(n.id);
+              const prevText = (prev?.content || '').replace(/<[^>]*>/g, '').trim();
+              if (curText.length === 0 && prev && prevText.length > 5) {
+                return prev;
+              }
+              return n;
+            });
+            localStorage.setItem(NOTES_BACKUP_STORAGE_KEY, JSON.stringify(mergedBackup));
+            return;
+          }
+        }
         localStorage.setItem(NOTES_BACKUP_STORAGE_KEY, raw);
       } catch (_) {}
     }
