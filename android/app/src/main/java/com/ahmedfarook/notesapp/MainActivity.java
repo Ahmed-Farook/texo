@@ -1,7 +1,9 @@
 package com.ahmedfarook.notesapp;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
@@ -21,7 +23,9 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(NotesWidgetPlugin.class);
         super.onCreate(savedInstanceState);
         applySavedSystemBarTheme();
-        handleWidgetIntent(getIntent());
+        if (savedInstanceState == null) {
+            handleWidgetIntent(getIntent());
+        }
     }
 
     @Override
@@ -62,34 +66,50 @@ public class MainActivity extends BridgeActivity {
 
     private void handleWidgetIntent(Intent intent) {
         if (intent == null) return;
+        // Ignore stale widget intents when Android reopens an old task from Recents
+        if ((intent.getFlags() & Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0) {
+            return;
+        }
 
-        if (getBridge() != null && getBridge().getWebView() != null) {
-            if ("add_checklist_item".equals(intent.getStringExtra("action")) || "com.ahmedfarook.notesapp.ADD_CHECKLIST_ITEM".equals(intent.getAction())) {
-                String noteId = intent.getStringExtra("note_id");
-                getBridge().getWebView().postDelayed(() -> {
-                    getBridge().getWebView().evaluateJavascript(
-                        "window.dispatchEvent(new CustomEvent('action:add-checklist-item', { detail: { noteId: '" + (noteId != null ? noteId : "") + "' } }));",
-                        null
-                    );
-                }, 400);
-            } else if (QuickNoteWidget.ACTION_NEW_NOTE.equals(intent.getAction())) {
-                getBridge().getWebView().postDelayed(() -> {
-                    getBridge().getWebView().evaluateJavascript(
-                        "window.dispatchEvent(new CustomEvent('action:new-note'));",
-                        null
-                    );
-                }, 400);
-            } else if (intent.hasExtra("note_id")) {
-                String noteId = intent.getStringExtra("note_id");
-                if (noteId != null && !noteId.isEmpty()) {
-                    getBridge().getWebView().postDelayed(() -> {
-                        getBridge().getWebView().evaluateJavascript(
-                            "window.dispatchEvent(new CustomEvent('action:open-note', { detail: { noteId: '" + noteId + "' } }));",
-                            null
-                        );
-                    }, 400);
-                }
+        String launchAction = "";
+        String launchNoteId = "";
+
+        String actionExtra = intent.getStringExtra("action");
+        String intentAction = intent.getAction();
+
+        if ("add_checklist_item".equals(actionExtra) || "com.ahmedfarook.notesapp.ADD_CHECKLIST_ITEM".equals(intentAction)) {
+            launchAction = "add_checklist_item";
+            String nid = intent.getStringExtra("note_id");
+            if (nid != null) launchNoteId = nid;
+        } else if (QuickNoteWidget.ACTION_NEW_NOTE.equals(intentAction) || "new_note".equals(actionExtra)) {
+            launchAction = "new_note";
+        } else if ("com.ahmedfarook.notesapp.OPEN_NOTE".equals(intentAction) || "open_note".equals(actionExtra) || intent.hasExtra("note_id")) {
+            String nid = intent.getStringExtra("note_id");
+            if (nid != null && !nid.isEmpty()) {
+                launchAction = "open_note";
+                launchNoteId = nid;
             }
+        }
+
+        if (launchAction.isEmpty()) return;
+
+        // Persist pending launch so cold-started JS always consumes it once WebView/React finishes mounting
+        SharedPreferences prefs = getSharedPreferences(TodoWidget.PREFS_NAME, Context.MODE_PRIVATE);
+        prefs.edit()
+            .putString(TodoWidget.KEY_PENDING_LAUNCH_ACTION, launchAction)
+            .putString(TodoWidget.KEY_PENDING_LAUNCH_NOTE_ID, launchNoteId)
+            .apply();
+
+        // Notify an already-mounted WebView immediately on warm start
+        if (getBridge() != null && getBridge().getWebView() != null) {
+            getBridge().getWebView().postDelayed(() -> {
+                if (getBridge() != null && getBridge().getWebView() != null) {
+                    getBridge().getWebView().evaluateJavascript(
+                        "window.dispatchEvent(new CustomEvent('action:widget-launch'));",
+                        null
+                    );
+                }
+            }, 120);
         }
     }
 }

@@ -6,6 +6,7 @@ export interface Note {
   drawingStrokes?: string; // JSON string of DrawingStroke[] for seamless in-note stylus annotations
   folderId: string;
   isChecklist?: boolean; // persistent flag indicating this note is a checklist
+  isDraft?: boolean; // unsaved new note/checklist discarded if navigated away without edits
   previousContentBackup?: string; // safety snapshot of rich content if accidentally overwritten
   isPinned: boolean;
   isTrash?: boolean;

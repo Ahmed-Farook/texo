@@ -119,6 +119,9 @@ export const Layout: React.FC = () => {
   const sharedPreviewNoteRef = useRef(sharedPreviewNote);
   sharedPreviewNoteRef.current = sharedPreviewNote;
 
+  const setActiveNoteIdRef = useRef(setActiveNoteId);
+  setActiveNoteIdRef.current = setActiveNoteId;
+
   // Auto-dismiss shared note import toast
   useEffect(() => {
     if (!importedSharedToast) return;
@@ -169,7 +172,7 @@ export const Layout: React.FC = () => {
         // 4. If inside a note on mobile, navigate back to notes list and clear active note
         if (mobileViewRef.current === 'editor') {
           setMobileView('list');
-          setActiveNoteId(null);
+          setActiveNoteIdRef.current(null);
           return;
         }
 

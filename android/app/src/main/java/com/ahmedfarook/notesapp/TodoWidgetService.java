@@ -87,7 +87,8 @@ public class TodoWidgetService extends RemoteViewsService {
                 e.printStackTrace();
             }
 
-            if (!found && mItems.isEmpty()) {
+            String singleFallbackId = prefs.getString(TodoWidget.KEY_NOTE_ID, "");
+            if (!found && mItems.isEmpty() && (mNoteId.isEmpty() || mNoteId.equals(singleFallbackId))) {
                 String singleJson = prefs.getString(TodoWidget.KEY_ITEMS_JSON, "[]");
                 try {
                     JSONArray singleArr = new JSONArray(singleJson);

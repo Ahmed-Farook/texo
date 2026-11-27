@@ -90,6 +90,51 @@ export function isChecklistNote(note?: Partial<Note> | null): boolean {
   return note.folderId === 'checklists' && Boolean(note.content && note.content.includes('data-type="taskList"'));
 }
 
+/**
+ * Returns true if a note has no user-authored edits beyond its default empty template
+ * (default title `'New Note'` / `'To-Do List'` / empty, no body text/tasks, no rich elements, no drawings).
+ */
+export function isUneditedDraftNote(note?: Partial<Note> | null): boolean {
+  if (!note) return false;
+
+  // Any drawing strokes mean the note was edited
+  if (
+    note.drawingStrokes &&
+    note.drawingStrokes.length > 2 &&
+    note.drawingStrokes !== '[]' &&
+    note.drawingStrokes !== '{}'
+  ) {
+    return false;
+  }
+
+  const content = note.content || '';
+  if (/<(img|table|canvas|blockquote|pre|code)/i.test(content) || content.includes('data-type="mathBlock"')) {
+    return false;
+  }
+  if (/<h[2-6]/i.test(content)) {
+    return false;
+  }
+
+  const h1Match = content.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+  const h1Title = h1Match ? h1Match[1].replace(/<[^>]*>/g, '').trim() : '';
+  const effectiveTitle = (note.title ?? h1Title).trim();
+  const isDefaultTitle =
+    effectiveTitle === '' ||
+    effectiveTitle === 'New Note' ||
+    effectiveTitle === 'To-Do List';
+
+  if (!isDefaultTitle) {
+    return false;
+  }
+
+  const bodyText = content
+    .replace(/<h1[^>]*>[\s\S]*?<\/h1>/gi, '')
+    .replace(/<[^>]*>/g, '')
+    .trim();
+
+  return bodyText.length === 0;
+}
+
 export const loadStoredNotes = (): Note[] => {
   try {
     let data = localStorage.getItem(NOTES_STORAGE_KEY);
@@ -237,9 +282,13 @@ export const loadStoredNotes = (): Note[] => {
 
 export const saveStoredNotes = (notes: Note[]): void => {
   try {
-    const raw = JSON.stringify(notes);
+    // Never persist unedited draft notes/checklists to disk or backup
+    const persistableNotes = notes
+      .filter((n) => !n.isDraft)
+      .map(({ isDraft: _discardDraft, ...rest }) => rest as Note);
+    const raw = JSON.stringify(persistableNotes);
     localStorage.setItem(NOTES_STORAGE_KEY, raw);
-    if (notes.length > 0) {
+    if (persistableNotes.length > 0) {
       try {
         // Preserve rich non-empty snapshots in backup even if a note in `notes` was cleared
         const existingBackupRaw = localStorage.getItem(NOTES_BACKUP_STORAGE_KEY);
@@ -250,7 +299,7 @@ export const saveStoredNotes = (notes: Note[]): void => {
             prevBackupArr.forEach((bn: Note) => {
               if (bn && bn.id) prevMap.set(bn.id, bn);
             });
-            const mergedBackup = notes.map((n) => {
+            const mergedBackup = persistableNotes.map((n) => {
               const curText = (n.content || '').replace(/<[^>]*>/g, '').trim();
               const prev = prevMap.get(n.id);
               const prevText = (prev?.content || '').replace(/<[^>]*>/g, '').trim();

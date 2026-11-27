@@ -28,6 +28,8 @@ public class TodoWidget extends AppWidgetProvider {
     public static final String KEY_PENDING_ADDS = "widget_pending_adds";
     public static final String KEY_PENDING_WIDGET_OPS = "widget_pending_ops";
     public static final String KEY_WIDGET_THEME = "widget_theme";
+    public static final String KEY_PENDING_LAUNCH_ACTION = "widget_pending_launch_action";
+    public static final String KEY_PENDING_LAUNCH_NOTE_ID = "widget_pending_launch_note_id";
 
     public static boolean isDarkTheme(Context context) {
         if (context == null) return false;
@@ -294,7 +296,6 @@ public class TodoWidget extends AppWidgetProvider {
         // Apply exact Kyoto Light / Dark palette (zero orange)
         views.setInt(R.id.widget_todo_root, "setBackgroundResource",
                 isDark ? R.drawable.widget_todo_card_bg_dark : R.drawable.widget_todo_card_bg);
-        views.setTextColor(R.id.widget_todo_brand, Color.parseColor(isDark ? "#7EAAD0" : "#213A50"));
         views.setTextColor(R.id.widget_todo_title, Color.parseColor(isDark ? "#E8EEF3" : "#1C2B36"));
         views.setImageViewResource(R.id.widget_todo_btn_switch,
                 isDark ? R.drawable.ic_widget_switch_list_dark : R.drawable.ic_widget_switch_list);
@@ -311,12 +312,14 @@ public class TodoWidget extends AppWidgetProvider {
             flags |= PendingIntent.FLAG_IMMUTABLE;
         }
 
-        // Tapping header title opens that checklist inside texō
+        // Tapping header title opens that exact checklist inside texō
         Intent openIntent = new Intent(context, MainActivity.class);
-        openIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        openIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         if (!noteId.isEmpty()) {
+            openIntent.putExtra("action", "open_note");
             openIntent.putExtra("note_id", noteId);
             openIntent.setAction("com.ahmedfarook.notesapp.OPEN_NOTE");
+            openIntent.setData(Uri.parse("texo://open-note/" + appWidgetId + "/" + Uri.encode(noteId)));
         }
         PendingIntent openPending = PendingIntent.getActivity(context, 100 + appWidgetId, openIntent, flags);
         views.setOnClickPendingIntent(R.id.widget_todo_title_area, openPending);

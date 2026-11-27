@@ -136,6 +136,30 @@ public class NotesWidgetPlugin extends Plugin {
     }
 
     @PluginMethod
+    public synchronized void consumePendingLaunch(PluginCall call) {
+        try {
+            Context context = getContext();
+            SharedPreferences prefs = context.getSharedPreferences(TodoWidget.PREFS_NAME, Context.MODE_PRIVATE);
+            String action = prefs.getString(TodoWidget.KEY_PENDING_LAUNCH_ACTION, "");
+            String noteId = prefs.getString(TodoWidget.KEY_PENDING_LAUNCH_NOTE_ID, "");
+
+            if (!action.isEmpty() || !noteId.isEmpty()) {
+                prefs.edit()
+                    .remove(TodoWidget.KEY_PENDING_LAUNCH_ACTION)
+                    .remove(TodoWidget.KEY_PENDING_LAUNCH_NOTE_ID)
+                    .apply();
+            }
+
+            JSObject result = new JSObject();
+            result.put("action", action);
+            result.put("noteId", noteId);
+            call.resolve(result);
+        } catch (Exception e) {
+            call.reject("Failed to consume pending widget launch: " + e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
     public void getPendingWidgetOps(PluginCall call) {
         try {
             Context context = getContext();

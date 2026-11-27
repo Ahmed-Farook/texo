@@ -66,7 +66,6 @@ public class QuickAddTaskActivity extends AppCompatActivity {
 
         View backdrop = findViewById(R.id.quick_add_backdrop);
         View sheet = findViewById(R.id.quick_add_sheet);
-        TextView brandView = findViewById(R.id.quick_add_brand);
         TextView titleView = findViewById(R.id.quick_add_title);
         final EditText taskInput = findViewById(R.id.edit_quick_task);
         Button btnAdd = findViewById(R.id.btn_quick_add);
@@ -76,9 +75,6 @@ public class QuickAddTaskActivity extends AppCompatActivity {
         // Apply Kyoto Light / Dark colors seamlessly
         if (sheet != null) {
             sheet.setBackgroundResource(isDark ? R.drawable.widget_sheet_bg_dark : R.drawable.widget_sheet_bg);
-        }
-        if (brandView != null) {
-            brandView.setTextColor(Color.parseColor(isDark ? "#7EAAD0" : "#213A50"));
         }
         if (titleView != null) {
             titleView.setTextColor(Color.parseColor(isDark ? "#E8EEF3" : "#1C2B36"));

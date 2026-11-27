@@ -244,6 +244,40 @@ export function addTaskItemToHtml(html: string, text: string): string {
   return `${html || '<h1>To-Do List</h1>'}<ul data-type="taskList">${taskHtml}</ul>`;
 }
 
+export interface PendingWidgetLaunch {
+  action: 'open_note' | 'add_checklist_item' | 'new_note';
+  noteId?: string;
+}
+
+let isConsumingWidgetLaunch = false;
+
+/**
+ * Atomically retrieves and clears any pending widget launch intent stored by MainActivity
+ * (reliable across both cold starts and warm background resumes).
+ */
+export async function consumePendingWidgetLaunch(): Promise<PendingWidgetLaunch | null> {
+  if (!Capacitor.isNativePlatform() || isConsumingWidgetLaunch) return null;
+  const win = typeof window !== 'undefined' ? (window as any) : undefined;
+  const widgetPlugin = win?.Capacitor?.Plugins?.NotesWidget;
+  if (!widgetPlugin?.consumePendingLaunch) return null;
+
+  isConsumingWidgetLaunch = true;
+  try {
+    const res = await widgetPlugin.consumePendingLaunch();
+    if (res && typeof res.action === 'string' && res.action.length > 0) {
+      return {
+        action: res.action as PendingWidgetLaunch['action'],
+        noteId: typeof res.noteId === 'string' && res.noteId.length > 0 ? res.noteId : undefined,
+      };
+    }
+  } catch (err) {
+    console.warn('Failed to consume pending widget launch:', err);
+  } finally {
+    isConsumingWidgetLaunch = false;
+  }
+  return null;
+}
+
 /**
  * Finds the most relevant note for the widget:
  * 1. The note explicitly pinned to the widget by the user.
@@ -253,7 +287,7 @@ export function addTaskItemToHtml(html: string, text: string): string {
  * 5. Or the latest non-trash note.
  */
 export function findBestWidgetNote(notes: Note[], activeNoteId: string | null): Note | null {
-  const activeNotes = notes.filter((n) => !n.isTrash && !n.isLocked);
+  const activeNotes = notes.filter((n) => !n.isTrash && !n.isLocked && !n.isDraft);
   if (activeNotes.length === 0) return null;
 
   // 1. Explicit user selection for widget
@@ -347,7 +381,7 @@ export async function syncAllChecklistsToAndroidWidget(notes: Note[]): Promise<v
   if (!widgetPlugin?.syncAllChecklists) return;
 
   const checklistNotes = notes.filter(
-    (n) => !n.isTrash && !n.isLocked && isChecklistNote(n)
+    (n) => !n.isTrash && !n.isLocked && !n.isDraft && isChecklistNote(n)
   );
 
   const payload = checklistNotes.map((note) => ({

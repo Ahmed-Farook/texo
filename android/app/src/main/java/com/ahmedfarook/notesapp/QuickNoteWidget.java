@@ -6,6 +6,7 @@ import android.appwidget.AppWidgetProvider;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
+import android.net.Uri;
 import android.os.Build;
 import android.widget.RemoteViews;
 
@@ -21,7 +22,8 @@ public class QuickNoteWidget extends AppWidgetProvider {
             Intent intent = new Intent(context, MainActivity.class);
             intent.setAction(ACTION_NEW_NOTE);
             intent.putExtra("action", "new_note");
-            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            intent.setData(Uri.parse("texo://new-note/quick/" + appWidgetId));
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
 
             int flags = PendingIntent.FLAG_UPDATE_CURRENT;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {

@@ -21,6 +21,7 @@ import {
   INITIAL_NOTES,
   isChecklistNote,
   hasRichNoteContent,
+  isUneditedDraftNote,
 } from '../utils/storage';
 import { triggerHaptic } from '../utils/haptics';
 import { useAuth } from './AuthContext';
@@ -53,6 +54,7 @@ import {
   syncThemeToAndroid,
   getWidgetPinnedNoteId,
   setWidgetPinnedNoteId,
+  consumePendingWidgetLaunch,
 } from '../utils/widgetSync';
 import {
   getSharePayloadFromUrl,
@@ -183,7 +185,7 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
     return true;
   });
-  const [mobileView, setMobileView] = useState<'list' | 'editor'>('list');
+  const [mobileView, setMobileViewState] = useState<'list' | 'editor'>('list');
   const [isFolderPickerOpen, setIsFolderPickerOpen] = useState<boolean>(false);
   const [isSelectionMode, setIsSelectionMode] = useState<boolean>(false);
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
@@ -212,39 +214,54 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   notesRef.current = notes;
   const foldersRef = useRef(folders);
   foldersRef.current = folders;
+  const activeNoteIdRef = useRef(activeNoteId);
+  activeNoteIdRef.current = activeNoteId;
+  const selectedFolderIdRef = useRef(selectedFolderId);
+  selectedFolderIdRef.current = selectedFolderId;
+  const pendingWidgetOpenNoteIdRef = useRef<string | null>(null);
+  const processPendingWidgetLaunchRef = useRef<() => void>(() => {});
   const cloudSaveTimers = useRef<Record<string, NodeJS.Timeout>>({});
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const setActiveNoteId = useCallback((nextId: string | null) => {
-    setActiveNoteIdState((prevId) => {
-      if (prevId && prevId !== nextId) {
-        if (cloudSaveTimers.current[prevId]) {
-          clearTimeout(cloudSaveTimers.current[prevId]);
-          delete cloudSaveTimers.current[prevId];
-          const target = notesRef.current.find((n) => n.id === prevId);
-          if (target && user && encryptionKeyRef.current) {
-            upsertNoteToCloud(target, user.id, encryptionKeyRef.current);
-          }
-        }
-      }
-      return nextId;
+  // Discards untouched blank new note/checklist drafts whenever navigating away
+  const discardDrafts = useCallback((keepNoteId?: string | null) => {
+    setNotes((prev) => {
+      const hasDraftToDiscard = prev.some((n) => n.isDraft && n.id !== keepNoteId);
+      return hasDraftToDiscard ? prev.filter((n) => !n.isDraft || n.id === keepNoteId) : prev;
     });
+  }, []);
+
+  const setMobileView = useCallback((view: 'list' | 'editor') => {
+    setMobileViewState(view);
+    if (view === 'list') {
+      discardDrafts(null);
+    }
+  }, [discardDrafts]);
+
+  const flushCloudTimerForNote = useCallback((noteId: string | null) => {
+    if (!noteId || !cloudSaveTimers.current[noteId]) return;
+    clearTimeout(cloudSaveTimers.current[noteId]);
+    delete cloudSaveTimers.current[noteId];
+    const target = notesRef.current.find((n) => n.id === noteId);
+    if (target && !target.isDraft && user && encryptionKeyRef.current) {
+      upsertNoteToCloud(target, user.id, encryptionKeyRef.current);
+    }
   }, [user]);
 
+  const setActiveNoteId = useCallback((nextId: string | null) => {
+    const prevId = activeNoteIdRef.current;
+    if (prevId && prevId !== nextId) {
+      flushCloudTimerForNote(prevId);
+    }
+    discardDrafts(nextId);
+    setActiveNoteIdState(nextId);
+  }, [flushCloudTimerForNote, discardDrafts]);
+
   const setSelectedFolderId = useCallback((folderId: string) => {
-    setActiveNoteIdState((prevId) => {
-      if (prevId && cloudSaveTimers.current[prevId]) {
-        clearTimeout(cloudSaveTimers.current[prevId]);
-        delete cloudSaveTimers.current[prevId];
-        const target = notesRef.current.find((n) => n.id === prevId);
-        if (target && user && encryptionKeyRef.current) {
-          upsertNoteToCloud(target, user.id, encryptionKeyRef.current);
-        }
-      }
-      return prevId;
-    });
+    flushCloudTimerForNote(activeNoteIdRef.current);
+    discardDrafts(null);
     setSelectedFolderIdState(folderId === 'all' ? 'default' : folderId);
-  }, [user]);
+  }, [flushCloudTimerForNote, discardDrafts]);
 
   const isSyncingRef = useRef(false);
   const lastSyncTimeRef = useRef<number>(0);
@@ -284,8 +301,9 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         effectiveRemoteNotes = INITIAL_NOTES;
       }
 
+      const persistedLocalNotes = notesRef.current.filter((n) => !n.isDraft);
       const { merged: mergedNotes, toUpload: notesToUpload } = mergeNotes(
-        notesRef.current,
+        persistedLocalNotes,
         effectiveRemoteNotes
       );
       const { merged: mergedFolders, toUpload: foldersToUpload } = mergeFolders(
@@ -294,7 +312,10 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       );
 
       clearTimeout(safetyTimer);
-      setNotes(mergedNotes);
+      const activeDraft = notesRef.current.find(
+        (n) => n.isDraft && n.id === activeNoteIdRef.current && !mergedNotes.some((m) => m.id === n.id)
+      );
+      setNotes(activeDraft ? [activeDraft, ...mergedNotes] : mergedNotes);
       setFolders(mergedFolders);
       setSyncStatus('synced');
       lastSyncTimeRef.current = Date.now();
@@ -444,14 +465,21 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     let appStateHandle: any = null;
     let resumeHandle: any = null;
 
+    const handleWidgetWake = () => {
+      syncPendingWidgetToggles(notesRef.current, updateNote);
+      processPendingWidgetLaunchRef.current();
+    };
+
     try {
       CapApp.addListener('appStateChange', ({ isActive }) => {
         if (isActive) {
+          handleWidgetWake();
           syncWithCloud(true, true);
         }
       }).then(handle => { appStateHandle = handle; });
 
       CapApp.addListener('resume', () => {
+        handleWidgetWake();
         syncWithCloud(true, true);
       }).then(handle => { resumeHandle = handle; });
     } catch (e) {
@@ -503,7 +531,7 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           clearTimeout(activeTimers[id]);
           delete activeTimers[id];
           const noteToSave = notesRef.current.find(n => n.id === id);
-          if (noteToSave) {
+          if (noteToSave && !noteToSave.isDraft) {
             upsertNoteToCloud(noteToSave, user.id, encryptionKeyRef.current).catch(console.warn);
           }
         }
@@ -589,7 +617,7 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           clearTimeout(cloudSaveTimers.current[noteId]);
           delete cloudSaveTimers.current[noteId];
           const target = notesRef.current.find((n) => n.id === noteId);
-          if (target) {
+          if (target && !target.isDraft) {
             upsertNoteToCloud(target, user.id, encryptionKeyRef.current);
           }
         }
@@ -707,10 +735,11 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   }, [filteredNotes, activeNoteId, sharedPreviewNote]);
 
-  // Create new note (kept as local draft until user makes first edit or drawing)
+  // Create new note (kept as unsaved local draft until user makes first real edit or drawing)
   const createNote = useCallback((folderId?: string): Note => {
     triggerHaptic();
-    const isChecklistTarget = folderId === 'checklists' || (!folderId && selectedFolderId === 'checklists');
+    const isChecklistTarget =
+      folderId === 'checklists' || (!folderId && selectedFolderId === 'checklists');
     const targetFolder =
       folderId ||
       (selectedFolderId === 'trash' || selectedFolderId === 'all' || selectedFolderId === 'pinned'
@@ -726,24 +755,27 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       plainTextPreview: isChecklistTarget ? '0 tasks completed' : 'No additional text',
       folderId: targetFolder,
       isChecklist: isChecklistTarget ? true : false,
+      isDraft: true,
       isPinned: false,
       isTrash: false,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
 
-    setNotes(prev => [newNote, ...prev]);
-    setActiveNoteId(newNote.id);
-    setMobileView('editor');
-
-    if (isChecklistTarget) {
-      setTimeout(() => {
-        syncNoteToAndroidWidget([newNote, ...notesRef.current], newNote.id);
-      }, 60);
+    // Switch folder if needed (e.g. launching Quick Note from Checklists or Trash) so filteredNotes includes newNote
+    if (
+      targetFolder !== selectedFolderId &&
+      (folderId !== undefined || selectedFolderId === 'trash' || isChecklistTarget !== (selectedFolderId === 'checklists'))
+    ) {
+      setSelectedFolderIdState(targetFolder);
     }
 
+    setNotes(prev => [newNote, ...prev.filter(n => !n.isDraft)]);
+    setActiveNoteIdState(newNote.id);
+    setMobileView('editor');
+
     return newNote;
-  }, [selectedFolderId, setActiveNoteId]);
+  }, [selectedFolderId, setMobileView]);
 
   // Update note
   const updateNote = useCallback((id: string, updates: Partial<Note>) => {
@@ -786,7 +818,7 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             ? 'default'
             : (updates.folderId ?? note.folderId);
 
-          const updated: Note = {
+          const candidate: Note = {
             ...note,
             ...updates,
             isChecklist: finalIsChecklist,
@@ -795,7 +827,19 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             updatedAt: newUpdatedAt,
           };
 
-          if (user && hasContentChanged) {
+          // Promote draft to saved note once it has real user content (custom title, body/task text, media, drawings, pin, or lock)
+          const stillUneditedDraft = Boolean(
+            note.isDraft &&
+            !candidate.isPinned &&
+            !candidate.isLocked &&
+            isUneditedDraftNote(candidate)
+          );
+          const updated: Note = {
+            ...candidate,
+            isDraft: stillUneditedDraft ? true : undefined,
+          };
+
+          if (user && hasContentChanged && !updated.isDraft) {
             if (cloudSaveTimers.current[id]) {
               clearTimeout(cloudSaveTimers.current[id]);
             }
@@ -820,7 +864,68 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     );
   }, [user]);
 
-  // Listen to native Electron bridge actions and Android widget events if available
+  // Opens a specific note/checklist by ID, automatically switching library/folder so Checklists never search inside Notes
+  const openNoteFromWidget = useCallback((targetId: string, triggerQuickAdd = false) => {
+    if (!targetId) return;
+    const targetNote = notesRef.current.find((n) => n.id === targetId);
+    if (!targetNote) {
+      pendingWidgetOpenNoteIdRef.current = targetId;
+      return;
+    }
+
+    pendingWidgetOpenNoteIdRef.current = null;
+    const isTargetChecklist = isChecklistNote(targetNote);
+    const targetFolder = targetNote.isTrash
+      ? 'trash'
+      : isTargetChecklist
+      ? 'checklists'
+      : (targetNote.folderId && targetNote.folderId !== 'checklists' ? targetNote.folderId : 'default');
+
+    setSearchQuery('');
+    setSelectedFolderIdState(targetFolder);
+    discardDrafts(targetId);
+    setActiveNoteIdState(targetId);
+    setMobileViewState('editor');
+
+    // Also pull any widget task toggles/adds immediately onto the opened checklist
+    syncPendingWidgetToggles(notesRef.current, updateNote);
+
+    if (triggerQuickAdd) {
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('editor:quick-add-checklist'));
+      }, 300);
+    }
+  }, [discardDrafts, updateNote]);
+
+  // Complete a deferred widget open if cloud sync just delivered the requested note
+  useEffect(() => {
+    const pendingId = pendingWidgetOpenNoteIdRef.current;
+    if (!pendingId) return;
+    if (notes.some((n) => n.id === pendingId)) {
+      openNoteFromWidget(pendingId);
+    }
+  }, [notes, openNoteFromWidget]);
+
+  const processPendingWidgetLaunch = useCallback(async () => {
+    const pending = await consumePendingWidgetLaunch();
+    if (!pending) return;
+
+    if (pending.action === 'new_note') {
+      setSearchQuery('');
+      createNote('default');
+    } else if (pending.action === 'add_checklist_item') {
+      if (pending.noteId) {
+        openNoteFromWidget(pending.noteId, true);
+      } else {
+        setSearchQuery('');
+        createNote('checklists');
+      }
+    } else if (pending.action === 'open_note' && pending.noteId) {
+      openNoteFromWidget(pending.noteId);
+    }
+  }, [createNote, openNoteFromWidget]);
+
+  // Listen to native Electron bridge actions and Android widget launch events
   useEffect(() => {
     const electronAPI = (window as unknown as { electronAPI?: { sendNewNote: (cb: () => void) => void } })?.electronAPI;
     if (electronAPI?.sendNewNote) {
@@ -830,37 +935,43 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
 
     const handleWidgetNewNote = () => {
-      createNote();
+      setSearchQuery('');
+      createNote('default');
     };
     const handleWidgetOpenNote = (e: any) => {
       const targetId = e.detail?.noteId;
       if (targetId) {
-        setActiveNoteId(targetId);
-        setMobileView('editor');
+        openNoteFromWidget(targetId);
       }
     };
     const handleWidgetAddChecklistItem = (e: any) => {
       const targetId = e.detail?.noteId;
       if (targetId) {
-        setActiveNoteId(targetId);
-        setMobileView('editor');
-        setTimeout(() => {
-          window.dispatchEvent(new CustomEvent('editor:quick-add-checklist'));
-        }, 300);
+        openNoteFromWidget(targetId, true);
       } else {
-        createNote();
+        setSearchQuery('');
+        createNote('checklists');
       }
     };
+    const handleWidgetLaunchEvent = () => {
+      processPendingWidgetLaunch();
+    };
+
+    // Consume any cold-start widget launch intent stored by MainActivity before React mounted
+    processPendingWidgetLaunchRef.current = processPendingWidgetLaunch;
+    processPendingWidgetLaunch();
 
     window.addEventListener('action:new-note', handleWidgetNewNote);
     window.addEventListener('action:open-note', handleWidgetOpenNote);
     window.addEventListener('action:add-checklist-item', handleWidgetAddChecklistItem);
+    window.addEventListener('action:widget-launch', handleWidgetLaunchEvent);
     return () => {
       window.removeEventListener('action:new-note', handleWidgetNewNote);
       window.removeEventListener('action:open-note', handleWidgetOpenNote);
       window.removeEventListener('action:add-checklist-item', handleWidgetAddChecklistItem);
+      window.removeEventListener('action:widget-launch', handleWidgetLaunchEvent);
     };
-  }, [createNote, setActiveNoteId]);
+  }, [createNote, openNoteFromWidget, processPendingWidgetLaunch]);
 
   const dismissImportedSharedToast = useCallback(() => {
     setImportedSharedToast(null);
@@ -1002,12 +1113,21 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
   }, [updateNote]);
 
-  // Move note to Recycle Bin (or open confirmation modal if already in Recycle Bin)
+  // Move note to Recycle Bin (or discard unedited draft immediately without cluttering Recycle Bin)
   const deleteNote = useCallback((id: string) => {
     const target = notesRef.current.find(n => n.id === id);
     if (!target) return;
 
     triggerHaptic();
+    if (target.isDraft) {
+      setNotes(prev => prev.filter(n => n.id !== id));
+      if (activeNoteId === id) {
+        setActiveNoteIdState(null);
+        setMobileView('list');
+      }
+      return;
+    }
+
     if (target.isTrash) {
       setPendingTrashDelete({ type: 'single', id: target.id, title: target.title });
       return;
@@ -1038,7 +1158,7 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
       }
     }
-  }, [activeNoteId, filteredNotes, user, setActiveNoteId]);
+  }, [activeNoteId, filteredNotes, user, setActiveNoteId, setMobileView]);
 
   const permanentlyDeleteNote = useCallback((id: string) => {
     const target = notesRef.current.find(n => n.id === id);
