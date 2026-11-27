@@ -46,7 +46,7 @@ public class NotesWidgetPlugin extends Plugin {
         }
     }
 
-    private void refreshAllWidgets(Context context) {
+    public static void refreshAllWidgetsStatic(Context context) {
         AppWidgetManager mgr = AppWidgetManager.getInstance(context);
 
         int[] todoIds = mgr.getAppWidgetIds(new ComponentName(context, TodoWidget.class));
@@ -71,6 +71,111 @@ public class NotesWidgetPlugin extends Plugin {
             intent.setAction(AppWidgetManager.ACTION_APPWIDGET_UPDATE);
             intent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, barIds);
             context.sendBroadcast(intent);
+        }
+    }
+
+    private void refreshAllWidgets(Context context) {
+        refreshAllWidgetsStatic(context);
+    }
+
+    @PluginMethod
+    public void setWidgetAppearance(PluginCall call) {
+        try {
+            Context context = getContext();
+            String preset = call.getString("preset", WidgetAppearance.getBgPreset(context));
+            Integer opacityObj = call.getInt("opacity", WidgetAppearance.getOpacity(context));
+            int opacity = opacityObj != null ? opacityObj : WidgetAppearance.getOpacity(context);
+            String textMode = call.getString("textMode", WidgetAppearance.getTextMode(context));
+            boolean showBorder = Boolean.TRUE.equals(call.getBoolean("showBorder", WidgetAppearance.isShowBorder(context)));
+
+            WidgetAppearance.saveAppearance(context, preset, opacity, textMode, showBorder);
+            refreshAllWidgets(context);
+
+            JSObject ret = new JSObject();
+            ret.put("preset", WidgetAppearance.getBgPreset(context));
+            ret.put("opacity", WidgetAppearance.getOpacity(context));
+            ret.put("textMode", WidgetAppearance.getTextMode(context));
+            ret.put("showBorder", WidgetAppearance.isShowBorder(context));
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("Failed to save widget appearance: " + e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void getWidgetAppearance(PluginCall call) {
+        try {
+            Context context = getContext();
+            JSObject ret = new JSObject();
+            ret.put("preset", WidgetAppearance.getBgPreset(context));
+            ret.put("opacity", WidgetAppearance.getOpacity(context));
+            ret.put("textMode", WidgetAppearance.getTextMode(context));
+            ret.put("showBorder", WidgetAppearance.isShowBorder(context));
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("Failed to read widget appearance: " + e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void setCloudConfig(PluginCall call) {
+        try {
+            String supabaseUrl = call.getString("supabaseUrl", "");
+            String supabaseAnonKey = call.getString("supabaseAnonKey", "");
+            String accessToken = call.getString("accessToken", "");
+            String refreshToken = call.getString("refreshToken", "");
+            Long expiresAtObj = call.getLong("expiresAt", 0L);
+            long expiresAt = expiresAtObj != null ? expiresAtObj : 0L;
+            String userId = call.getString("userId", "");
+            String e2eeKey = call.getString("e2eeKey", "");
+
+            WidgetCloudSyncHelper.saveCloudCredentials(
+                getContext(),
+                supabaseUrl,
+                supabaseAnonKey,
+                accessToken,
+                refreshToken,
+                expiresAt,
+                userId,
+                e2eeKey
+            );
+
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("Failed to store cloud sync config: " + e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void clearCloudConfig(PluginCall call) {
+        try {
+            WidgetCloudSyncHelper.clearCloudCredentials(getContext());
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("Failed to clear cloud sync config: " + e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void getRefreshedCloudSession(PluginCall call) {
+        try {
+            Context context = getContext();
+            SharedPreferences prefs = context.getSharedPreferences(TodoWidget.PREFS_NAME, Context.MODE_PRIVATE);
+            boolean refreshed = prefs.getBoolean(WidgetCloudSyncHelper.KEY_CLOUD_SESSION_REFRESHED, false);
+            JSObject ret = new JSObject();
+            ret.put("refreshed", refreshed);
+            if (refreshed) {
+                ret.put("accessToken", prefs.getString(WidgetCloudSyncHelper.KEY_CLOUD_ACCESS_TOKEN, ""));
+                ret.put("refreshToken", prefs.getString(WidgetCloudSyncHelper.KEY_CLOUD_REFRESH_TOKEN, ""));
+                prefs.edit().putBoolean(WidgetCloudSyncHelper.KEY_CLOUD_SESSION_REFRESHED, false).apply();
+            }
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("Failed to get refreshed session: " + e.getMessage(), e);
         }
     }
 

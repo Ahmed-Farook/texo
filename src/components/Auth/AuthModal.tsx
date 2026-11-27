@@ -15,7 +15,10 @@ import {
   Trash2,
   ChevronDown,
   RefreshCw,
+  SlidersHorizontal,
 } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
+import { WidgetSettingsModal } from '../Widget/WidgetSettingsModal';
 import { useAuth } from '../../store/AuthContext';
 import { useNotes } from '../../store/NotesContext';
 import { triggerHaptic } from '../../utils/haptics';
@@ -52,8 +55,13 @@ export const AuthModal: React.FC = () => {
 
   // Delete Account confirmation state
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+  const [isWidgetSettingsOpen, setIsWidgetSettingsOpen] = useState(false);
 
-  if (!isAuthModalOpen) return null;
+  if (!isAuthModalOpen) {
+    return isWidgetSettingsOpen ? (
+      <WidgetSettingsModal isOpen={isWidgetSettingsOpen} onClose={() => setIsWidgetSettingsOpen(false)} />
+    ) : null;
+  }
 
   const handleUnlock = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -549,6 +557,21 @@ export const AuthModal: React.FC = () => {
                 🛡️ <strong>Zero-Knowledge:</strong> Notes are encrypted with AES-256 on your device before syncing. Even the database admin cannot read your notes.
               </p>
             </>
+          )}
+
+          {Capacitor.isNativePlatform() && (
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic();
+                closeAuthModal();
+                setIsWidgetSettingsOpen(true);
+              }}
+              className="w-full py-2.5 px-3.5 rounded-xl border border-[#DFD3C0] dark:border-[#263747] bg-[#EFE7D8]/70 dark:bg-[#1C2733] hover:bg-[#E5DCCB] dark:hover:bg-[#223344] text-xs font-semibold flex items-center justify-center space-x-2 transition-colors"
+            >
+              <SlidersHorizontal size={14} className="text-[#213A50] dark:text-[#7EAAD0]" />
+              <span>Customize Home Screen Widgets</span>
+            </button>
           )}
         </div>
       </div>

@@ -16,7 +16,7 @@ public class QuickNoteWidget extends AppWidgetProvider {
 
     @Override
     public void onUpdate(Context context, AppWidgetManager appWidgetManager, int[] appWidgetIds) {
-        boolean isDark = TodoWidget.isDarkTheme(context);
+        boolean isLightFg = WidgetAppearance.isLightForeground(context);
 
         for (int appWidgetId : appWidgetIds) {
             Intent intent = new Intent(context, MainActivity.class);
@@ -33,11 +33,10 @@ public class QuickNoteWidget extends AppWidgetProvider {
             PendingIntent pendingIntent = PendingIntent.getActivity(context, 0, intent, flags);
 
             RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.widget_quick_note);
-            views.setInt(R.id.widget_quick_note_root, "setBackgroundResource",
-                    isDark ? R.drawable.widget_quick_note_bg_dark : R.drawable.widget_quick_note_bg);
+            WidgetAppearance.applyWidgetContainer(context, views, R.id.widget_quick_bg_fill, R.id.widget_quick_bg_border);
             views.setInt(R.id.widget_quick_note_icon, "setBackgroundResource",
-                    isDark ? R.drawable.widget_circle_button_dark : R.drawable.widget_circle_button);
-            views.setTextColor(R.id.widget_quick_note_label, Color.parseColor(isDark ? "#E8EEF3" : "#1C2B36"));
+                    isLightFg ? R.drawable.widget_circle_button_dark : R.drawable.widget_circle_button);
+            views.setTextColor(R.id.widget_quick_note_label, WidgetAppearance.primaryTextColor(isLightFg));
             views.setOnClickPendingIntent(R.id.widget_quick_note_root, pendingIntent);
 
             appWidgetManager.updateAppWidget(appWidgetId, views);

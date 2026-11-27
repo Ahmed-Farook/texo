@@ -794,7 +794,7 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             (updates.isTrash !== undefined && updates.isTrash !== note.isTrash) ||
             (updates.folderId !== undefined && updates.folderId !== note.folderId);
 
-          const newUpdatedAt = hasContentChanged ? Date.now() : (updates.updatedAt ?? note.updatedAt);
+          const newUpdatedAt = updates.updatedAt ?? (hasContentChanged ? Date.now() : note.updatedAt);
 
           // Content safety guard: If an update attempts to replace non-empty text with empty HTML / empty checklist,
           // preserve the previous content in previousContentBackup
@@ -1089,8 +1089,11 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     setMobileView('list');
   }, [setActiveNoteId]);
 
+  const hasInitialWidgetSyncCompletedRef = useRef(!Capacitor.isNativePlatform());
+
   // Keep Android Home Screen Widget in sync with the user's latest checklist / note
   useEffect(() => {
+    if (!hasInitialWidgetSyncCompletedRef.current) return;
     const timer = setTimeout(() => {
       syncNoteToAndroidWidget(notes, activeNoteId);
     }, 350);
@@ -1099,7 +1102,18 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   // Apply any checklist items toggled on the Android widget while app was backgrounded
   useEffect(() => {
-    syncPendingWidgetToggles(notesRef.current, updateNote);
+    let mounted = true;
+    const pullWidgetOps = async () => {
+      await syncPendingWidgetToggles(notesRef.current, updateNote);
+      if (mounted && !hasInitialWidgetSyncCompletedRef.current) {
+        hasInitialWidgetSyncCompletedRef.current = true;
+        setTimeout(() => {
+          syncNoteToAndroidWidget(notesRef.current, activeNoteIdRef.current);
+        }, 100);
+      }
+    };
+
+    pullWidgetOps();
 
     const handleFocusOrResume = () => {
       syncPendingWidgetToggles(notesRef.current, updateNote);
@@ -1108,6 +1122,7 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     window.addEventListener('focus', handleFocusOrResume);
     window.addEventListener('visibilitychange', handleFocusOrResume);
     return () => {
+      mounted = false;
       window.removeEventListener('focus', handleFocusOrResume);
       window.removeEventListener('visibilitychange', handleFocusOrResume);
     };

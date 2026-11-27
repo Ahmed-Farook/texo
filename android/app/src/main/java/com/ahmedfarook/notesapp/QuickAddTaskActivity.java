@@ -3,6 +3,7 @@ package com.ahmedfarook.notesapp;
 import android.appwidget.AppWidgetManager;
 import android.content.ComponentName;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.os.Bundle;
@@ -174,6 +175,7 @@ public class QuickAddTaskActivity extends AppCompatActivity {
             boolean addedToAll = false;
             String resolvedNoteId = noteId != null ? noteId : "";
 
+            long now = System.currentTimeMillis();
             for (int i = 0; i < arr.length(); i++) {
                 JSONObject noteObj = arr.getJSONObject(i);
                 String objId = noteObj.optString("id", "");
@@ -181,6 +183,7 @@ public class QuickAddTaskActivity extends AppCompatActivity {
                     resolvedNoteId = objId;
                     JSONArray itemsArr = noteObj.optJSONArray("items");
                     noteObj.put("items", insertAtEndOfActive(itemsArr, newItem));
+                    noteObj.put("updatedAt", now);
                     addedToAll = true;
                     break;
                 }
@@ -209,7 +212,7 @@ public class QuickAddTaskActivity extends AppCompatActivity {
             addOp.put("op", "add");
             addOp.put("noteId", resolvedNoteId);
             addOp.put("text", text);
-            addOp.put("timestamp", System.currentTimeMillis());
+            addOp.put("timestamp", now);
             ops.put(addOp);
             editor.putString(TodoWidget.KEY_PENDING_WIDGET_OPS, ops.toString());
 
@@ -225,6 +228,14 @@ public class QuickAddTaskActivity extends AppCompatActivity {
                 if (ids != null && ids.length > 0) {
                     appWidgetManager.notifyAppWidgetViewDataChanged(ids, R.id.widget_todo_listview);
                 }
+            }
+
+            // 5. Immediately sync this task addition to cloud in background via TodoWidget receiver
+            if (resolvedNoteId != null && !resolvedNoteId.isEmpty()) {
+                Intent syncIntent = new Intent(this, TodoWidget.class);
+                syncIntent.setAction(TodoWidget.ACTION_SYNC_CLOUD);
+                syncIntent.putExtra("note_id", resolvedNoteId);
+                sendBroadcast(syncIntent);
             }
 
         } catch (Exception e) {

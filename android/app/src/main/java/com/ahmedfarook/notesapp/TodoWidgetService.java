@@ -116,23 +116,24 @@ public class TodoWidgetService extends RemoteViewsService {
                 return null;
             }
 
-            boolean isDark = TodoWidget.isDarkTheme(mContext);
+            boolean isLightFg = WidgetAppearance.isLightForeground(mContext);
             TodoItem item = mItems.get(position);
             RemoteViews views = new RemoteViews(mContext.getPackageName(), R.layout.widget_todo_item);
 
             if (item.checked) {
                 views.setImageViewResource(R.id.widget_todo_item_check,
-                        isDark ? R.drawable.widget_checkbox_checked_dark : R.drawable.widget_checkbox_checked);
+                        isLightFg ? R.drawable.widget_checkbox_checked_dark : R.drawable.widget_checkbox_checked);
                 SpannableString span = new SpannableString(item.text);
                 span.setSpan(new StrikethroughSpan(), 0, item.text.length(), 0);
                 views.setTextViewText(R.id.widget_todo_item_text, span);
-                views.setTextColor(R.id.widget_todo_item_text, Color.parseColor(isDark ? "#627788" : "#8AA0B4"));
+                views.setTextColor(R.id.widget_todo_item_text, WidgetAppearance.completedTextColor(isLightFg));
             } else {
                 views.setImageViewResource(R.id.widget_todo_item_check,
-                        isDark ? R.drawable.widget_checkbox_unchecked_dark : R.drawable.widget_checkbox_unchecked);
+                        isLightFg ? R.drawable.widget_checkbox_unchecked_dark : R.drawable.widget_checkbox_unchecked);
                 views.setTextViewText(R.id.widget_todo_item_text, item.text);
-                views.setTextColor(R.id.widget_todo_item_text, Color.parseColor(isDark ? "#E8EEF3" : "#1C2B36"));
+                views.setTextColor(R.id.widget_todo_item_text, WidgetAppearance.primaryTextColor(isLightFg));
             }
+            views.setInt(R.id.widget_todo_item_delete, "setColorFilter", WidgetAppearance.secondaryTextColor(isLightFg));
 
             // Fill-in intent for Toggle (clicking checkbox or task text)
             Intent toggleFillIn = new Intent();

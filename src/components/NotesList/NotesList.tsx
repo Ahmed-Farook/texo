@@ -17,7 +17,10 @@ import {
   Pencil,
   Download,
   ListTodo,
+  SlidersHorizontal,
 } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
+import { WidgetSettingsModal } from '../Widget/WidgetSettingsModal';
 import { useNotes } from '../../store/NotesContext';
 import { NoteCard } from './NoteCard';
 import { triggerHaptic } from '../../utils/haptics';
@@ -75,6 +78,7 @@ export const NotesList: React.FC<NotesListProps> = ({
 
   const [showMovePicker, setShowMovePicker] = useState(false);
   const [showBulkExportMenu, setShowBulkExportMenu] = useState(false);
+  const [isWidgetSettingsOpen, setIsWidgetSettingsOpen] = useState(false);
 
   // Type analysis of selected notes for Move Picker isolation
   const selectedNotesList = useMemo<Note[]>(
@@ -716,6 +720,29 @@ export const NotesList: React.FC<NotesListProps> = ({
                   </div>
                 </button>
               </div>
+
+              {/* Android Home Screen Widget Appearance Customization */}
+              {Capacitor.isNativePlatform() && (
+                <div className={`bg-[#FAF6EF] dark:bg-[#1C2733] border border-[#DFD3C0]/60 dark:border-[#223344] rounded-xl overflow-hidden shadow-xs ${
+                  isFolderSelectionMode ? 'opacity-40 pointer-events-none' : ''
+                }`}>
+                  <button
+                    onClick={() => {
+                      triggerHaptic();
+                      setIsFolderPickerOpen(false);
+                      setIsWidgetSettingsOpen(true);
+                    }}
+                    className="w-full px-3.5 py-2.5 flex items-center justify-between text-xs text-[#1C2B36] dark:text-[#CBD8E3] hover:bg-[#E5DCCB] dark:hover:bg-[#223344] transition-colors text-left"
+                  >
+                    <div className="flex items-center space-x-2.5">
+                      <div className="w-6 h-6 rounded-md bg-[#213A50]/10 dark:bg-[#7EAAD0]/15 text-[#213A50] dark:text-[#7EAAD0] flex items-center justify-center shrink-0">
+                        <SlidersHorizontal size={14} />
+                      </div>
+                      <span className="font-medium">Widget Appearance &amp; Opacity</span>
+                    </div>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Folder Selection Mode Sticky Action Bar */}
@@ -1223,6 +1250,12 @@ export const NotesList: React.FC<NotesListProps> = ({
           </div>
         </div>
       )}
+
+      {/* Home Screen Widget Opacity & Style Settings Modal */}
+      <WidgetSettingsModal
+        isOpen={isWidgetSettingsOpen}
+        onClose={() => setIsWidgetSettingsOpen(false)}
+      />
     </section>
   );
 };

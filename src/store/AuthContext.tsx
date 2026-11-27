@@ -13,6 +13,11 @@ import {
   exportKeyToString,
   importKeyFromString,
 } from '../utils/crypto';
+import {
+  syncCloudCredentialsToAndroidWidget,
+  clearCloudCredentialsFromAndroidWidget,
+  getRefreshedCloudSessionFromAndroid,
+} from '../utils/widgetSync';
 
 export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'error';
 
@@ -66,25 +71,39 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   useEffect(() => {
     let isMounted = true;
 
-    // 1. Fast initial session check with 3-second safety race timeout
-    const sessionPromise = supabase.auth.getSession();
-    const timeoutPromise = new Promise<{ data: { session: null }; error: Error }>((resolve) =>
-      setTimeout(() => resolve({ data: { session: null }, error: new Error('Session timeout') }), 3000)
-    );
-
-    Promise.race([sessionPromise, timeoutPromise])
-      .then(async ({ data: { session }, error }: any) => {
-        if (!isMounted) return;
-        if (!error && session?.user) {
-          setSession(session);
-          await loadStoredKey(session.user.id);
-          setUser(session.user);
+    // 1. Check if Android widget background sync rotated the Supabase refresh token while app was asleep
+    const initAuth = async () => {
+      try {
+        const refreshed = await getRefreshedCloudSessionFromAndroid();
+        if (refreshed) {
+          await supabase.auth.setSession({
+            access_token: refreshed.accessToken,
+            refresh_token: refreshed.refreshToken,
+          });
         }
-        setIsLoading(false);
-      })
-      .catch(() => {
-        if (isMounted) setIsLoading(false);
-      });
+      } catch (_) {}
+
+      const sessionPromise = supabase.auth.getSession();
+      const timeoutPromise = new Promise<{ data: { session: null }; error: Error }>((resolve) =>
+        setTimeout(() => resolve({ data: { session: null }, error: new Error('Session timeout') }), 3000)
+      );
+
+      Promise.race([sessionPromise, timeoutPromise])
+        .then(async ({ data: { session }, error }: any) => {
+          if (!isMounted) return;
+          if (!error && session?.user) {
+            setSession(session);
+            await loadStoredKey(session.user.id);
+            setUser(session.user);
+          }
+          setIsLoading(false);
+        })
+        .catch(() => {
+          if (isMounted) setIsLoading(false);
+        });
+    };
+
+    initAuth();
 
     // 2. Listen for ongoing auth state changes without blocking event queue
     const {
@@ -108,6 +127,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       subscription.unsubscribe();
     };
   }, [loadStoredKey]);
+
+  // Keep native Android widget cloud sync credentials synchronized whenever session or E2EE key updates
+  useEffect(() => {
+    if (user && session?.access_token && session?.refresh_token) {
+      syncCloudCredentialsToAndroidWidget({
+        accessToken: session.access_token,
+        refreshToken: session.refresh_token,
+        expiresAt: session.expires_at,
+        userId: user.id,
+        encryptionKey,
+      });
+    }
+  }, [user, session, encryptionKey]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     setSyncStatus('syncing');
@@ -205,6 +237,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (user) {
       localStorage.removeItem(`apple_notes_e2ee_${user.id}`);
     }
+    await clearCloudCredentialsFromAndroidWidget();
     await supabase.auth.signOut();
     setSession(null);
     setUser(null);
@@ -274,8 +307,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         };
       }
 
-      // 4. Remove local Zero-Knowledge E2EE key
+      // 4. Remove local Zero-Knowledge E2EE key and widget cloud credentials
       localStorage.removeItem(`apple_notes_e2ee_${user.id}`);
+      await clearCloudCredentialsFromAndroidWidget();
 
       // 5. Sign out and clear local session state
       await supabase.auth.signOut();

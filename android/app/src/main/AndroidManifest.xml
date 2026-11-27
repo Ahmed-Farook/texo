@@ -70,6 +70,7 @@
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                 <action android:name="com.ahmedfarook.notesapp.ACTION_TOGGLE_TODO" />
+                <action android:name="com.ahmedfarook.notesapp.ACTION_SYNC_CLOUD" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"

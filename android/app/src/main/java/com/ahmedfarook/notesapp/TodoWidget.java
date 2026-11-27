@@ -19,6 +19,7 @@ import org.json.JSONObject;
 public class TodoWidget extends AppWidgetProvider {
 
     public static final String ACTION_TOGGLE_TODO = "com.ahmedfarook.notesapp.ACTION_TOGGLE_TODO";
+    public static final String ACTION_SYNC_CLOUD = "com.ahmedfarook.notesapp.ACTION_SYNC_CLOUD";
     public static final String PREFS_NAME = "texo_widget_prefs";
     public static final String KEY_NOTE_ID = "widget_note_id";
     public static final String KEY_NOTE_TITLE = "widget_note_title";
@@ -45,19 +46,26 @@ public class TodoWidget extends AppWidgetProvider {
     public void onReceive(Context context, Intent intent) {
         super.onReceive(context, intent);
 
-        if (ACTION_TOGGLE_TODO.equals(intent.getAction())) {
+        String action = intent.getAction();
+        if (ACTION_TOGGLE_TODO.equals(action)) {
             int itemIndex = intent.getIntExtra("item_index", -1);
             String noteId = intent.getStringExtra("note_id");
             String widgetAction = intent.getStringExtra("widget_action");
             int appWidgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID);
 
             if (itemIndex >= 0) {
-                if ("delete".equals(widgetAction)) {
-                    deleteTodoItem(context, noteId, itemIndex, appWidgetId);
-                } else {
-                    toggleTodoItem(context, noteId, itemIndex, appWidgetId);
+                String resolvedId = "delete".equals(widgetAction)
+                    ? deleteTodoItem(context, noteId, itemIndex, appWidgetId)
+                    : toggleTodoItem(context, noteId, itemIndex, appWidgetId);
+                if (resolvedId != null && !resolvedId.isEmpty()) {
+                    PendingResult pendingResult = goAsync();
+                    WidgetCloudSyncHelper.enqueueCloudSyncAsync(context, resolvedId, pendingResult);
                 }
             }
+        } else if (ACTION_SYNC_CLOUD.equals(action)) {
+            String noteId = intent.getStringExtra("note_id");
+            PendingResult pendingResult = goAsync();
+            WidgetCloudSyncHelper.enqueueCloudSyncAsync(context, noteId, pendingResult);
         }
     }
 
@@ -132,15 +140,16 @@ public class TodoWidget extends AppWidgetProvider {
         }
     }
 
-    private void toggleTodoItem(Context context, String noteId, int itemIndex, int appWidgetId) {
+    private String toggleTodoItem(Context context, String noteId, int itemIndex, int appWidgetId) {
         SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         String allJson = prefs.getString(KEY_ALL_CHECKLISTS_JSON, "[]");
+        String resolvedNoteId = noteId != null ? noteId : "";
 
         try {
             JSONArray arr = new JSONArray(allJson);
             boolean[] toggledState = new boolean[]{false};
             boolean updatedInAll = false;
-            String resolvedNoteId = noteId != null ? noteId : "";
+            long now = System.currentTimeMillis();
 
             for (int i = 0; i < arr.length(); i++) {
                 JSONObject noteObj = arr.getJSONObject(i);
@@ -151,6 +160,7 @@ public class TodoWidget extends AppWidgetProvider {
                     if (itemsArr != null && itemIndex < itemsArr.length()) {
                         JSONArray reordered = toggleAndReorderItems(itemsArr, itemIndex, toggledState);
                         noteObj.put("items", reordered);
+                        noteObj.put("updatedAt", now);
                         updatedInAll = true;
                     }
                     break;
@@ -179,16 +189,18 @@ public class TodoWidget extends AppWidgetProvider {
         } catch (Exception e) {
             e.printStackTrace();
         }
+        return resolvedNoteId;
     }
 
-    private void deleteTodoItem(Context context, String noteId, int itemIndex, int appWidgetId) {
+    private String deleteTodoItem(Context context, String noteId, int itemIndex, int appWidgetId) {
         SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         String allJson = prefs.getString(KEY_ALL_CHECKLISTS_JSON, "[]");
+        String resolvedNoteId = noteId != null ? noteId : "";
 
         try {
             JSONArray arr = new JSONArray(allJson);
             boolean updatedInAll = false;
-            String resolvedNoteId = noteId != null ? noteId : "";
+            long now = System.currentTimeMillis();
 
             for (int i = 0; i < arr.length(); i++) {
                 JSONObject noteObj = arr.getJSONObject(i);
@@ -204,6 +216,7 @@ public class TodoWidget extends AppWidgetProvider {
                             }
                         }
                         noteObj.put("items", remaining);
+                        noteObj.put("updatedAt", now);
                         updatedInAll = true;
                     }
                     break;
@@ -237,6 +250,7 @@ public class TodoWidget extends AppWidgetProvider {
         } catch (Exception e) {
             e.printStackTrace();
         }
+        return resolvedNoteId;
     }
 
     @Override
@@ -290,20 +304,19 @@ public class TodoWidget extends AppWidgetProvider {
             }
         }
 
-        boolean isDark = isDarkTheme(context);
+        boolean isLightFg = WidgetAppearance.isLightForeground(context);
         RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.widget_todo_list);
 
-        // Apply exact Kyoto Light / Dark palette (zero orange)
-        views.setInt(R.id.widget_todo_root, "setBackgroundResource",
-                isDark ? R.drawable.widget_todo_card_bg_dark : R.drawable.widget_todo_card_bg);
-        views.setTextColor(R.id.widget_todo_title, Color.parseColor(isDark ? "#E8EEF3" : "#1C2B36"));
-        views.setImageViewResource(R.id.widget_todo_btn_switch,
-                isDark ? R.drawable.ic_widget_switch_list_dark : R.drawable.ic_widget_switch_list);
+        // Apply customizable background preset, opacity, border, and contrast colors
+        WidgetAppearance.applyWidgetContainer(context, views, R.id.widget_todo_bg_fill, R.id.widget_todo_bg_border);
+        views.setTextColor(R.id.widget_todo_title, WidgetAppearance.primaryTextColor(isLightFg));
+        views.setImageViewResource(R.id.widget_todo_btn_switch, R.drawable.ic_widget_switch_list);
+        views.setInt(R.id.widget_todo_btn_switch, "setColorFilter", WidgetAppearance.secondaryTextColor(isLightFg));
         views.setInt(R.id.widget_todo_btn_add, "setBackgroundResource",
-                isDark ? R.drawable.widget_circle_button_dark : R.drawable.widget_circle_button);
+                isLightFg ? R.drawable.widget_circle_button_dark : R.drawable.widget_circle_button);
         views.setInt(R.id.widget_todo_divider, "setBackgroundColor",
-                Color.parseColor(isDark ? "#223344" : "#DFD3C0"));
-        views.setTextColor(R.id.widget_todo_empty, Color.parseColor(isDark ? "#8AA0B4" : "#5A6E82"));
+                WidgetAppearance.dividerColor(context, isLightFg));
+        views.setTextColor(R.id.widget_todo_empty, WidgetAppearance.secondaryTextColor(isLightFg));
 
         views.setTextViewText(R.id.widget_todo_title, (noteTitle == null || noteTitle.isEmpty()) ? "To-Do List" : noteTitle);
 

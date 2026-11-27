@@ -1,6 +1,166 @@
 import { Capacitor } from '@capacitor/core';
 import { Note } from '../types/note';
 import { isChecklistNote } from './storage';
+import { exportKeyToString } from './crypto';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../lib/supabase';
+
+export type WidgetBgPreset =
+  | 'auto'
+  | 'paper'
+  | 'slate'
+  | 'white'
+  | 'black'
+  | 'ocean'
+  | 'sand'
+  | 'forest'
+  | 'plum';
+
+export type WidgetTextMode = 'auto' | 'light' | 'dark';
+
+export interface WidgetAppearanceConfig {
+  preset: WidgetBgPreset;
+  opacity: number; // 0 to 100
+  textMode: WidgetTextMode;
+  showBorder: boolean;
+}
+
+export const DEFAULT_WIDGET_APPEARANCE: WidgetAppearanceConfig = {
+  preset: 'auto',
+  opacity: 100,
+  textMode: 'auto',
+  showBorder: true,
+};
+
+const WIDGET_APPEARANCE_STORAGE_KEY = 'texo_widget_appearance_v1';
+
+export const WIDGET_BG_PRESETS: {
+  id: WidgetBgPreset;
+  label: string;
+  swatch: string;
+  border: string;
+  isLightSurface: boolean;
+}[] = [
+  { id: 'auto', label: 'Match App', swatch: '#FAF6EF', border: '#DFD3C0', isLightSurface: true },
+  { id: 'paper', label: 'Paper', swatch: '#FAF6EF', border: '#DFD3C0', isLightSurface: true },
+  { id: 'slate', label: 'Dark Slate', swatch: '#16202A', border: '#223344', isLightSurface: false },
+  { id: 'white', label: 'Pure White', swatch: '#FFFFFF', border: '#D1D5DB', isLightSurface: true },
+  { id: 'black', label: 'AMOLED', swatch: '#0B0D10', border: '#2E343B', isLightSurface: false },
+  { id: 'ocean', label: 'Ocean', swatch: '#142C42', border: '#2C5275', isLightSurface: false },
+  { id: 'sand', label: 'Warm Sand', swatch: '#EFE3CE', border: '#D2C0A4', isLightSurface: true },
+  { id: 'forest', label: 'Forest', swatch: '#162920', border: '#2A4B3B', isLightSurface: false },
+  { id: 'plum', label: 'Plum', swatch: '#261B2E', border: '#473457', isLightSurface: false },
+];
+
+export async function getWidgetAppearance(): Promise<WidgetAppearanceConfig> {
+  const win = typeof window !== 'undefined' ? (window as any) : undefined;
+  const widgetPlugin = win?.Capacitor?.Plugins?.NotesWidget;
+  if (Capacitor.isNativePlatform() && widgetPlugin?.getWidgetAppearance) {
+    try {
+      const res = await widgetPlugin.getWidgetAppearance();
+      if (res) {
+        const cfg: WidgetAppearanceConfig = {
+          preset: (res.preset || 'auto') as WidgetBgPreset,
+          opacity: typeof res.opacity === 'number' ? Math.max(0, Math.min(100, res.opacity)) : 100,
+          textMode: (res.textMode || 'auto') as WidgetTextMode,
+          showBorder: typeof res.showBorder === 'boolean' ? res.showBorder : true,
+        };
+        try {
+          localStorage.setItem(WIDGET_APPEARANCE_STORAGE_KEY, JSON.stringify(cfg));
+        } catch (_) {}
+        return cfg;
+      }
+    } catch (err) {
+      console.warn('Failed reading native widget appearance:', err);
+    }
+  }
+  try {
+    const saved = localStorage.getItem(WIDGET_APPEARANCE_STORAGE_KEY);
+    if (saved) {
+      return { ...DEFAULT_WIDGET_APPEARANCE, ...JSON.parse(saved) };
+    }
+  } catch (_) {}
+  return DEFAULT_WIDGET_APPEARANCE;
+}
+
+export async function setWidgetAppearance(config: WidgetAppearanceConfig): Promise<void> {
+  try {
+    localStorage.setItem(WIDGET_APPEARANCE_STORAGE_KEY, JSON.stringify(config));
+  } catch (_) {}
+
+  if (!Capacitor.isNativePlatform()) return;
+  const win = typeof window !== 'undefined' ? (window as any) : undefined;
+  const widgetPlugin = win?.Capacitor?.Plugins?.NotesWidget;
+  if (!widgetPlugin?.setWidgetAppearance) return;
+
+  try {
+    await widgetPlugin.setWidgetAppearance({
+      preset: config.preset,
+      opacity: Math.max(0, Math.min(100, Math.round(config.opacity))),
+      textMode: config.textMode,
+      showBorder: config.showBorder,
+    });
+  } catch (err) {
+    console.warn('Failed saving widget appearance:', err);
+  }
+}
+
+export async function syncCloudCredentialsToAndroidWidget(params: {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt?: number;
+  userId: string;
+  encryptionKey: CryptoKey | null;
+}): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  const win = typeof window !== 'undefined' ? (window as any) : undefined;
+  const widgetPlugin = win?.Capacitor?.Plugins?.NotesWidget;
+  if (!widgetPlugin?.setCloudConfig) return;
+
+  try {
+    const e2eeKey = params.encryptionKey ? await exportKeyToString(params.encryptionKey) : '';
+    await widgetPlugin.setCloudConfig({
+      supabaseUrl: SUPABASE_URL,
+      supabaseAnonKey: SUPABASE_ANON_KEY,
+      accessToken: params.accessToken,
+      refreshToken: params.refreshToken,
+      expiresAt: params.expiresAt || 0,
+      userId: params.userId,
+      e2eeKey,
+    });
+  } catch (err) {
+    console.warn('Failed syncing cloud credentials to Android widget:', err);
+  }
+}
+
+export async function clearCloudCredentialsFromAndroidWidget(): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  const win = typeof window !== 'undefined' ? (window as any) : undefined;
+  const widgetPlugin = win?.Capacitor?.Plugins?.NotesWidget;
+  if (!widgetPlugin?.clearCloudConfig) return;
+  try {
+    await widgetPlugin.clearCloudConfig();
+  } catch (_) {}
+}
+
+export async function getRefreshedCloudSessionFromAndroid(): Promise<{
+  accessToken: string;
+  refreshToken: string;
+} | null> {
+  if (!Capacitor.isNativePlatform()) return null;
+  const win = typeof window !== 'undefined' ? (window as any) : undefined;
+  const widgetPlugin = win?.Capacitor?.Plugins?.NotesWidget;
+  if (!widgetPlugin?.getRefreshedCloudSession) return null;
+  try {
+    const res = await widgetPlugin.getRefreshedCloudSession();
+    if (res?.refreshed && res.accessToken && res.refreshToken) {
+      return {
+        accessToken: res.accessToken,
+        refreshToken: res.refreshToken,
+      };
+    }
+  } catch (_) {}
+  return null;
+}
 
 export interface WidgetTodoItem {
   text: string;
@@ -388,6 +548,10 @@ export async function syncAllChecklistsToAndroidWidget(notes: Note[]): Promise<v
     id: note.id,
     title: note.title || 'To-Do List',
     items: extractChecklistFromHtml(note.content || ''),
+    folderId: note.folderId || 'checklists',
+    isPinned: Boolean(note.isPinned),
+    createdAt: note.createdAt || Date.now(),
+    updatedAt: note.updatedAt || Date.now(),
   }));
 
   try {
@@ -411,9 +575,20 @@ export async function syncPendingWidgetToggles(
   if (!widgetPlugin) return;
 
   const modifiedHtmlMap = new Map<string, string>();
-  const resolveWorkingContent = (noteId: string): { id: string; content: string } | null => {
-    const target = notes.find((n) => n.id === noteId) || (noteId ? null : notes.find((n) => isChecklistNote(n)));
+  const latestTimestampMap = new Map<string, number>();
+
+  const resolveWorkingContent = (
+    noteId: string,
+    opTimestamp?: number
+  ): { id: string; content: string } | null => {
+    const target =
+      notes.find((n) => n.id === noteId) ||
+      (noteId ? null : notes.find((n) => isChecklistNote(n)));
     if (!target) return null;
+    // If cloud sync already pulled a newer version than this widget op, skip replaying stale op
+    if (opTimestamp && target.updatedAt && opTimestamp <= target.updatedAt) {
+      return null;
+    }
     const currentHtml = modifiedHtmlMap.get(target.id) ?? target.content ?? '';
     return { id: target.id, content: currentHtml };
   };
@@ -425,8 +600,9 @@ export async function syncPendingWidgetToggles(
       const ops = opsRes?.ops;
       if (Array.isArray(ops) && ops.length > 0) {
         for (const item of ops) {
-          const { op, noteId, itemIndex, checked, text } = item;
-          const resolved = resolveWorkingContent(noteId || '');
+          const { op, noteId, itemIndex, checked, text, timestamp } = item;
+          const opTs = typeof timestamp === 'number' ? timestamp : Date.now();
+          const resolved = resolveWorkingContent(noteId || '', opTs);
           if (!resolved) continue;
 
           let nextHtml = resolved.content;
@@ -438,6 +614,7 @@ export async function syncPendingWidgetToggles(
             nextHtml = addTaskItemToHtml(resolved.content, text);
           }
           modifiedHtmlMap.set(resolved.id, nextHtml);
+          latestTimestampMap.set(resolved.id, Math.max(latestTimestampMap.get(resolved.id) || 0, opTs));
         }
       }
     }
@@ -448,10 +625,12 @@ export async function syncPendingWidgetToggles(
       const toggles = res?.toggles;
       if (Array.isArray(toggles) && toggles.length > 0) {
         for (const t of toggles) {
-          const resolved = resolveWorkingContent(t.noteId || '');
+          const opTs = typeof t.timestamp === 'number' ? t.timestamp : Date.now();
+          const resolved = resolveWorkingContent(t.noteId || '', opTs);
           if (!resolved) continue;
           const nextHtml = toggleTaskItemInHtml(resolved.content, t.itemIndex, Boolean(t.checked));
           modifiedHtmlMap.set(resolved.id, nextHtml);
+          latestTimestampMap.set(resolved.id, Math.max(latestTimestampMap.get(resolved.id) || 0, opTs));
         }
       }
     }
@@ -462,22 +641,24 @@ export async function syncPendingWidgetToggles(
       if (Array.isArray(adds) && adds.length > 0) {
         for (const a of adds) {
           if (!a.text || !a.text.trim()) continue;
-          const resolved = resolveWorkingContent(a.noteId || '');
+          const opTs = typeof a.timestamp === 'number' ? a.timestamp : Date.now();
+          const resolved = resolveWorkingContent(a.noteId || '', opTs);
           if (!resolved) continue;
           const nextHtml = addTaskItemToHtml(resolved.content, a.text);
           modifiedHtmlMap.set(resolved.id, nextHtml);
+          latestTimestampMap.set(resolved.id, Math.max(latestTimestampMap.get(resolved.id) || 0, opTs));
         }
       }
     }
 
-    // Apply all net content changes atomically per note
+    // Apply all net content changes atomically per note using exact widget op timestamp
     for (const [id, finalHtml] of modifiedHtmlMap.entries()) {
       const original = notes.find((n) => n.id === id);
       if (original && finalHtml !== original.content) {
         updateNote(id, {
           content: finalHtml,
           plainTextPreview: computeChecklistPreview(finalHtml),
-          updatedAt: Date.now(),
+          updatedAt: latestTimestampMap.get(id) || Date.now(),
         });
       }
     }
