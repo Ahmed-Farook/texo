@@ -85,10 +85,12 @@
             </intent-filter>
         </activity>
 
-        <!-- Quick Add Task floating dialog activity for In-Widget task creation -->
+        <!-- Quick Add Task floating bottom-sheet activity for In-Widget task creation -->
         <activity
             android:name=".QuickAddTaskActivity"
             android:theme="@style/AppTheme.TranslucentQuickAdd"
+            android:taskAffinity=""
+            android:launchMode="singleInstance"
             android:windowSoftInputMode="stateVisible|adjustResize"
             android:excludeFromRecents="true"
             android:exported="false" />

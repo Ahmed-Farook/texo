@@ -1,100 +1,131 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/quick_add_backdrop"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:background="@drawable/widget_todo_card_bg"
-    android:padding="20dp"
-    android:layout_margin="20dp">
+    android:layout_height="match_parent"
+    android:fitsSystemWindows="true">
 
-    <!-- Header -->
+    <!-- Bottom-docked Google Tasks-style quick composer -->
     <LinearLayout
+        android:id="@+id/quick_add_sheet"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
+        android:layout_gravity="bottom"
+        android:orientation="vertical"
+        android:background="@drawable/widget_sheet_bg"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="16dp"
+        android:clickable="true"
+        android:focusable="true">
 
+        <!-- Drag handle indicator -->
+        <View
+            android:id="@+id/quick_add_handle"
+            android:layout_width="36dp"
+            android:layout_height="4dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginBottom="12dp"
+            android:background="@drawable/widget_sheet_handle" />
+
+        <!-- Header -->
         <LinearLayout
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical">
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
 
-            <TextView
-                android:layout_width="wrap_content"
+            <LinearLayout
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:text="texō"
-                android:textColor="#213A50"
-                android:textSize="11sp"
-                android:textStyle="bold" />
+                android:layout_weight="1"
+                android:orientation="vertical">
 
-            <TextView
-                android:id="@+id/quick_add_title"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Add to Checklist"
-                android:textColor="#1C2B36"
-                android:textSize="17sp"
-                android:textStyle="bold"
-                android:maxLines="1"
-                android:ellipsize="end" />
+                <TextView
+                    android:id="@+id/quick_add_brand"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="texō"
+                    android:textColor="#213A50"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/quick_add_title"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Add to To-Do List"
+                    android:textColor="#1C2B36"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:maxLines="1"
+                    android:ellipsize="end" />
+            </LinearLayout>
+
+            <ImageButton
+                android:id="@+id/btn_quick_close"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:padding="7dp"
+                android:background="@null"
+                android:src="@drawable/ic_widget_delete"
+                android:contentDescription="Close" />
         </LinearLayout>
 
-        <ImageButton
-            android:id="@+id/btn_quick_close"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
-            android:background="@null"
-            android:src="@android:drawable/ic_menu_close_clear_cancel"
-            android:tint="#8AA0B4"
-            android:contentDescription="Close" />
+        <!-- Multi-line wrapping Task Input Box -->
+        <EditText
+            android:id="@+id/edit_quick_task"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/widget_input_bg"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:paddingTop="12dp"
+            android:paddingBottom="12dp"
+            android:hint="New task"
+            android:textColor="#1C2B36"
+            android:textColorHint="#8AA0B4"
+            android:textSize="15sp"
+            android:inputType="textCapSentences|textAutoCorrect"
+            android:imeOptions="actionDone"
+            android:scrollHorizontally="false"
+            android:singleLine="false"
+            android:maxLines="5" />
+
+        <!-- Bottom Action Bar -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:gravity="end|center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btn_quick_cancel"
+                style="?android:attr/borderlessButtonStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="38dp"
+                android:text="Cancel"
+                android:textAllCaps="false"
+                android:textColor="#5A6E82"
+                android:textSize="13.5sp"
+                android:layout_marginEnd="8dp" />
+
+            <Button
+                android:id="@+id/btn_quick_add"
+                android:layout_width="wrap_content"
+                android:layout_height="38dp"
+                android:background="@drawable/widget_btn_action_bg"
+                android:text="Save"
+                android:textAllCaps="false"
+                android:textColor="#FFFFFF"
+                android:textSize="13.5sp"
+                android:textStyle="bold"
+                android:paddingStart="22dp"
+                android:paddingEnd="22dp" />
+        </LinearLayout>
+
     </LinearLayout>
-
-    <!-- Task Input Box -->
-    <EditText
-        android:id="@+id/edit_quick_task"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:background="@drawable/widget_input_bg"
-        android:padding="12dp"
-        android:hint="Type a task and press Enter..."
-        android:textColor="#1C2B36"
-        android:textColorHint="#8AA0B4"
-        android:textSize="15sp"
-        android:inputType="textCapSentences|textAutoCorrect"
-        android:imeOptions="actionDone"
-        android:maxLines="4" />
-
-    <!-- Action Buttons -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:gravity="end|center_vertical"
-        android:orientation="horizontal">
-
-        <Button
-            android:id="@+id/btn_quick_cancel"
-            style="?android:attr/borderlessButtonStyle"
-            android:layout_width="wrap_content"
-            android:layout_height="38dp"
-            android:text="Cancel"
-            android:textColor="#5A6E82"
-            android:textSize="13sp"
-            android:layout_marginEnd="8dp" />
-
-        <Button
-            android:id="@+id/btn_quick_add"
-            android:layout_width="wrap_content"
-            android:layout_height="38dp"
-            android:background="@drawable/widget_btn_action_bg"
-            android:text="Add Task"
-            android:textColor="#FFFFFF"
-            android:textSize="13sp"
-            android:textStyle="bold"
-            android:paddingStart="18dp"
-            android:paddingEnd="18dp" />
-    </LinearLayout>
-
-</LinearLayout>
+</FrameLayout>

@@ -8,9 +8,9 @@
     android:paddingLeft="14dp"
     android:paddingRight="14dp"
     android:paddingTop="12dp"
-    android:paddingBottom="12dp">
+    android:paddingBottom="10dp">
 
-    <!-- Header bar -->
+    <!-- Header bar (Google Tasks style) -->
     <LinearLayout
         android:id="@+id/widget_todo_header"
         android:layout_width="match_parent"
@@ -18,13 +18,17 @@
         android:orientation="horizontal"
         android:gravity="center_vertical">
 
+        <!-- Title area (opens checklist in texō) -->
         <LinearLayout
+            android:id="@+id/widget_todo_title_area"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:orientation="vertical">
+            android:orientation="vertical"
+            android:paddingEnd="6dp">
 
             <TextView
+                android:id="@+id/widget_todo_brand"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="texō"
@@ -38,52 +42,63 @@
                 android:layout_height="wrap_content"
                 android:text="To-Do List"
                 android:textColor="#1C2B36"
-                android:textSize="15sp"
+                android:textSize="16sp"
                 android:textStyle="bold"
                 android:maxLines="1"
                 android:ellipsize="end" />
         </LinearLayout>
 
-        <!-- Quick Add / Open Button -->
+        <!-- Switch checklist button (matches Google Tasks list switcher) -->
+        <ImageView
+            android:id="@+id/widget_todo_btn_switch"
+            android:layout_width="30dp"
+            android:layout_height="30dp"
+            android:layout_marginEnd="6dp"
+            android:padding="5dp"
+            android:src="@drawable/ic_widget_switch_list"
+            android:contentDescription="Switch Checklist" />
+
+        <!-- Quick Add (+) Button -->
         <LinearLayout
             android:id="@+id/widget_todo_btn_add"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
+            android:layout_width="34dp"
+            android:layout_height="34dp"
             android:background="@drawable/widget_circle_button"
             android:gravity="center"
-            android:contentDescription="New Note">
+            android:contentDescription="Add Task">
 
             <ImageView
-                android:layout_width="16dp"
-                android:layout_height="16dp"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
                 android:src="@drawable/ic_widget_add"
                 android:contentDescription="Add" />
         </LinearLayout>
     </LinearLayout>
 
-    <!-- Divider Line (RemoteViews compliant FrameLayout) -->
+    <!-- Divider Line -->
     <FrameLayout
+        android:id="@+id/widget_todo_divider"
         android:layout_width="match_parent"
         android:layout_height="1dp"
         android:layout_marginTop="8dp"
-        android:layout_marginBottom="6dp"
+        android:layout_marginBottom="4dp"
         android:background="#DFD3C0" />
 
-    <!-- Empty state -->
+    <!-- Empty state (tapping adds a task directly like Google Tasks) -->
     <TextView
         android:id="@+id/widget_todo_empty"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:text="No checklist items. Tap to open texō."
+        android:text="No tasks yet.\nTap + to add a task."
         android:textColor="#5A6E82"
-        android:textSize="12sp"
+        android:textSize="12.5sp"
         android:paddingTop="12dp"
         android:paddingBottom="12dp"
         android:gravity="center"
         android:visibility="gone" />
 
-    <!-- Scrollable ListView for all checklist items -->
+    <!-- Scrollable ListView for interactive tasks -->
     <ListView
         android:id="@+id/widget_todo_listview"
         android:layout_width="match_parent"

@@ -1,7 +1,16 @@
 package com.ahmedfarook.notesapp;
 
+import android.app.Activity;
 import android.content.Intent;
+import android.graphics.Color;
+import android.os.Build;
 import android.os.Bundle;
+import android.view.View;
+import android.view.Window;
+
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
+
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
@@ -11,7 +20,14 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(BiometricAuthPlugin.class);
         registerPlugin(NotesWidgetPlugin.class);
         super.onCreate(savedInstanceState);
+        applySavedSystemBarTheme();
         handleWidgetIntent(getIntent());
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        applySavedSystemBarTheme();
     }
 
     @Override
@@ -19,6 +35,29 @@ public class MainActivity extends BridgeActivity {
         super.onNewIntent(intent);
         setIntent(intent);
         handleWidgetIntent(intent);
+    }
+
+    private void applySavedSystemBarTheme() {
+        applySystemBarAppearance(this, TodoWidget.isDarkTheme(this));
+    }
+
+    public static void applySystemBarAppearance(Activity activity, boolean isDark) {
+        if (activity == null) return;
+        try {
+            Window window = activity.getWindow();
+            if (window == null) return;
+            View decorView = window.getDecorView();
+            WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(window, decorView);
+            if (controller != null) {
+                controller.setAppearanceLightStatusBars(!isDark);
+                controller.setAppearanceLightNavigationBars(!isDark);
+            }
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                try {
+                    window.setNavigationBarColor(Color.parseColor(isDark ? "#131B24" : "#F7F2EA"));
+                } catch (Exception ignored) {}
+            }
+        } catch (Exception ignored) {}
     }
 
     private void handleWidgetIntent(Intent intent) {

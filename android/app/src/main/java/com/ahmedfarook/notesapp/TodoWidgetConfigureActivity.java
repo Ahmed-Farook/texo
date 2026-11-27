@@ -5,6 +5,9 @@ import android.appwidget.AppWidgetManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.res.ColorStateList;
+import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -43,12 +46,12 @@ public class TodoWidgetConfigureActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Set result to CANCELED so if the user backs out, the widget is not created
         setResult(RESULT_CANCELED);
-
         setContentView(R.layout.activity_widget_configure);
 
-        // Find widget id from incoming intent
+        boolean isDark = TodoWidget.isDarkTheme(this);
+        MainActivity.applySystemBarAppearance(this, isDark);
+
         Intent intent = getIntent();
         Bundle extras = intent.getExtras();
         if (extras != null) {
@@ -63,10 +66,34 @@ public class TodoWidgetConfigureActivity extends Activity {
             return;
         }
 
+        View root = findViewById(R.id.config_root);
+        TextView brand = findViewById(R.id.config_brand);
+        TextView heading = findViewById(R.id.config_heading);
+        TextView sub = findViewById(R.id.config_sub);
+        View divider = findViewById(R.id.config_divider);
+        TextView emptyText = findViewById(R.id.config_empty_text);
         ListView listView = findViewById(R.id.config_checklist_list);
         View emptyState = findViewById(R.id.config_empty_state);
         Button btnOpenTexo = findViewById(R.id.btn_open_texo);
         Button btnCancel = findViewById(R.id.btn_cancel_config);
+
+        if (isDark) {
+            if (root != null) root.setBackgroundColor(Color.parseColor("#131B24"));
+            if (brand != null) brand.setTextColor(Color.parseColor("#7EAAD0"));
+            if (heading != null) heading.setTextColor(Color.parseColor("#E8EEF3"));
+            if (sub != null) sub.setTextColor(Color.parseColor("#8AA0B4"));
+            if (divider != null) divider.setBackgroundColor(Color.parseColor("#223344"));
+            if (emptyText != null) emptyText.setTextColor(Color.parseColor("#8AA0B4"));
+            if (btnOpenTexo != null) btnOpenTexo.setBackgroundResource(R.drawable.widget_btn_action_bg_dark);
+            if (btnCancel != null) {
+                btnCancel.setTextColor(Color.parseColor("#CBD8E3"));
+                btnCancel.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#1C2733")));
+            }
+            if (listView != null) {
+                listView.setDivider(new ColorDrawable(Color.parseColor("#223344")));
+                listView.setDividerHeight(1);
+            }
+        }
 
         btnCancel.setOnClickListener(v -> finish());
         btnOpenTexo.setOnClickListener(v -> {
@@ -76,7 +103,6 @@ public class TodoWidgetConfigureActivity extends Activity {
             finish();
         });
 
-        // Load checklists from SharedPreferences
         SharedPreferences prefs = getSharedPreferences(TodoWidget.PREFS_NAME, Context.MODE_PRIVATE);
         String allJson = prefs.getString(TodoWidget.KEY_ALL_CHECKLISTS_JSON, "[]");
 
@@ -97,7 +123,6 @@ public class TodoWidgetConfigureActivity extends Activity {
             e.printStackTrace();
         }
 
-        // Fallback: If no structured allChecklists, check single default note
         if (options.isEmpty()) {
             String defaultId = prefs.getString(TodoWidget.KEY_NOTE_ID, "");
             String defaultTitle = prefs.getString(TodoWidget.KEY_NOTE_TITLE, "To-Do List");
@@ -113,23 +138,20 @@ public class TodoWidgetConfigureActivity extends Activity {
             emptyState.setVisibility(View.GONE);
             listView.setVisibility(View.VISIBLE);
 
-            ChecklistAdapter adapter = new ChecklistAdapter(this, options);
+            ChecklistAdapter adapter = new ChecklistAdapter(this, options, isDark);
             listView.setAdapter(adapter);
 
             listView.setOnItemClickListener((parent, view, position, id) -> {
                 ChecklistOption chosen = options.get(position);
 
-                // Save selected note ID for this widget
                 SharedPreferences.Editor editor = prefs.edit();
                 editor.putString(PREF_PREFIX_KEY + mAppWidgetId, chosen.id);
                 editor.putString(PREF_TITLE_PREFIX_KEY + mAppWidgetId, chosen.title);
                 editor.apply();
 
-                // Trigger widget update
                 AppWidgetManager appWidgetManager = AppWidgetManager.getInstance(this);
                 TodoWidget.updateAppWidget(this, appWidgetManager, mAppWidgetId);
 
-                // Return OK result with widget ID
                 Intent resultValue = new Intent();
                 resultValue.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, mAppWidgetId);
                 setResult(RESULT_OK, resultValue);
@@ -141,10 +163,12 @@ public class TodoWidgetConfigureActivity extends Activity {
     private static class ChecklistAdapter extends BaseAdapter {
         private final Context context;
         private final List<ChecklistOption> items;
+        private final boolean isDark;
 
-        ChecklistAdapter(Context context, List<ChecklistOption> items) {
+        ChecklistAdapter(Context context, List<ChecklistOption> items, boolean isDark) {
             this.context = context;
             this.items = items;
+            this.isDark = isDark;
         }
 
         @Override
@@ -174,9 +198,10 @@ public class TodoWidgetConfigureActivity extends Activity {
 
             titleView.setText(item.title);
             subtitleView.setText(item.taskCount + (item.taskCount == 1 ? " task" : " tasks"));
+            titleView.setTextColor(Color.parseColor(isDark ? "#E8EEF3" : "#1C2B36"));
+            subtitleView.setTextColor(Color.parseColor(isDark ? "#8AA0B4" : "#6E7E8E"));
 
             return convertView;
         }
     }
 }
-

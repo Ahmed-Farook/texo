@@ -4,9 +4,12 @@ import android.appwidget.AppWidgetManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.graphics.Color;
 import android.os.Bundle;
 import android.view.KeyEvent;
 import android.view.View;
+import android.view.Window;
+import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
@@ -30,13 +33,17 @@ public class QuickAddTaskActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_quick_add_task);
 
+        Window win = getWindow();
+        if (win != null) {
+            win.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
+        }
+
         noteId = getIntent().getStringExtra("note_id");
         noteTitle = getIntent().getStringExtra("note_title");
         appWidgetId = getIntent().getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID);
 
         SharedPreferences prefs = getSharedPreferences(TodoWidget.PREFS_NAME, Context.MODE_PRIVATE);
 
-        // Fallback note ID / title if not provided
         if (noteId == null || noteId.isEmpty()) {
             String allJson = prefs.getString(TodoWidget.KEY_ALL_CHECKLISTS_JSON, "[]");
             try {
@@ -54,26 +61,54 @@ public class QuickAddTaskActivity extends AppCompatActivity {
             }
         }
 
-        TextView titleView = findViewById(R.id.quick_add_title);
-        if (titleView != null && noteTitle != null && !noteTitle.isEmpty()) {
-            titleView.setText("Add to " + noteTitle);
-        }
+        boolean isDark = TodoWidget.isDarkTheme(this);
+        MainActivity.applySystemBarAppearance(this, isDark);
 
+        View backdrop = findViewById(R.id.quick_add_backdrop);
+        View sheet = findViewById(R.id.quick_add_sheet);
+        TextView brandView = findViewById(R.id.quick_add_brand);
+        TextView titleView = findViewById(R.id.quick_add_title);
         final EditText taskInput = findViewById(R.id.edit_quick_task);
         Button btnAdd = findViewById(R.id.btn_quick_add);
         Button btnCancel = findViewById(R.id.btn_quick_cancel);
         ImageButton btnClose = findViewById(R.id.btn_quick_close);
 
-        View.OnClickListener closeListener = v -> {
-            finishWithoutAnimation();
-        };
+        // Apply Kyoto Light / Dark colors seamlessly
+        if (sheet != null) {
+            sheet.setBackgroundResource(isDark ? R.drawable.widget_sheet_bg_dark : R.drawable.widget_sheet_bg);
+        }
+        if (brandView != null) {
+            brandView.setTextColor(Color.parseColor(isDark ? "#7EAAD0" : "#213A50"));
+        }
+        if (titleView != null) {
+            titleView.setTextColor(Color.parseColor(isDark ? "#E8EEF3" : "#1C2B36"));
+            if (noteTitle != null && !noteTitle.isEmpty()) {
+                titleView.setText("Add to " + noteTitle);
+            }
+        }
+        if (taskInput != null) {
+            taskInput.setBackgroundResource(isDark ? R.drawable.widget_input_bg_dark : R.drawable.widget_input_bg);
+            taskInput.setTextColor(Color.parseColor(isDark ? "#E8EEF3" : "#1C2B36"));
+            taskInput.setHintTextColor(Color.parseColor(isDark ? "#627788" : "#8AA0B4"));
+            // Allow smooth word wrapping while keeping IME ActionDone button functional
+            taskInput.setHorizontallyScrolling(false);
+            taskInput.setMaxLines(5);
+        }
+        if (btnCancel != null) {
+            btnCancel.setTextColor(Color.parseColor(isDark ? "#8AA0B4" : "#5A6E82"));
+        }
+        if (btnAdd != null) {
+            btnAdd.setBackgroundResource(isDark ? R.drawable.widget_btn_action_bg_dark : R.drawable.widget_btn_action_bg);
+        }
 
+        View.OnClickListener closeListener = v -> finishWithoutAnimation();
+        if (backdrop != null) backdrop.setOnClickListener(closeListener);
         if (btnCancel != null) btnCancel.setOnClickListener(closeListener);
         if (btnClose != null) btnClose.setOnClickListener(closeListener);
 
         View.OnClickListener addListener = v -> {
             if (taskInput != null) {
-                String text = taskInput.getText().toString().trim();
+                String text = taskInput.getText().toString().replaceAll("[\\r\\n]+", " ").trim();
                 if (!text.isEmpty()) {
                     addTaskAndDismiss(text);
                 }
@@ -86,7 +121,7 @@ public class QuickAddTaskActivity extends AppCompatActivity {
             taskInput.setOnEditorActionListener((v, actionId, event) -> {
                 if (actionId == EditorInfo.IME_ACTION_DONE ||
                     (event != null && event.getKeyCode() == KeyEvent.KEYCODE_ENTER && event.getAction() == KeyEvent.ACTION_DOWN)) {
-                    String text = taskInput.getText().toString().trim();
+                    String text = taskInput.getText().toString().replaceAll("[\\r\\n]+", " ").trim();
                     if (!text.isEmpty()) {
                         addTaskAndDismiss(text);
                         return true;
@@ -95,15 +130,37 @@ public class QuickAddTaskActivity extends AppCompatActivity {
                 return false;
             });
 
-            // Automatically focus and show soft keyboard immediately
             taskInput.requestFocus();
             taskInput.postDelayed(() -> {
                 InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
                 if (imm != null) {
                     imm.showSoftInput(taskInput, InputMethodManager.SHOW_IMPLICIT);
                 }
-            }, 100);
+            }, 80);
         }
+    }
+
+    private JSONArray insertAtEndOfActive(JSONArray source, JSONObject newItem) {
+        JSONArray result = new JSONArray();
+        boolean inserted = false;
+        try {
+            if (source != null) {
+                for (int i = 0; i < source.length(); i++) {
+                    JSONObject it = source.getJSONObject(i);
+                    if (!inserted && it.optBoolean("checked", false)) {
+                        result.put(newItem);
+                        inserted = true;
+                    }
+                    result.put(it);
+                }
+            }
+            if (!inserted) {
+                result.put(newItem);
+            }
+        } catch (Exception e) {
+            result.put(newItem);
+        }
+        return result;
     }
 
     private void addTaskAndDismiss(String text) {
@@ -111,23 +168,23 @@ public class QuickAddTaskActivity extends AppCompatActivity {
             SharedPreferences prefs = getSharedPreferences(TodoWidget.PREFS_NAME, Context.MODE_PRIVATE);
             SharedPreferences.Editor editor = prefs.edit();
 
-            // 1. Add to KEY_ALL_CHECKLISTS_JSON
+            JSONObject newItem = new JSONObject();
+            newItem.put("text", text);
+            newItem.put("checked", false);
+
+            // 1. Insert at end of active items in KEY_ALL_CHECKLISTS_JSON
             String allJson = prefs.getString(TodoWidget.KEY_ALL_CHECKLISTS_JSON, "[]");
             JSONArray arr = new JSONArray(allJson);
             boolean addedToAll = false;
+            String resolvedNoteId = noteId != null ? noteId : "";
 
             for (int i = 0; i < arr.length(); i++) {
                 JSONObject noteObj = arr.getJSONObject(i);
-                if (noteObj.optString("id", "").equals(noteId) || (noteId == null || noteId.isEmpty())) {
+                String objId = noteObj.optString("id", "");
+                if (objId.equals(resolvedNoteId) || resolvedNoteId.isEmpty()) {
+                    resolvedNoteId = objId;
                     JSONArray itemsArr = noteObj.optJSONArray("items");
-                    if (itemsArr == null) {
-                        itemsArr = new JSONArray();
-                        noteObj.put("items", itemsArr);
-                    }
-                    JSONObject newItem = new JSONObject();
-                    newItem.put("text", text);
-                    newItem.put("checked", false);
-                    itemsArr.put(newItem);
+                    noteObj.put("items", insertAtEndOfActive(itemsArr, newItem));
                     addedToAll = true;
                     break;
                 }
@@ -137,36 +194,32 @@ public class QuickAddTaskActivity extends AppCompatActivity {
                 editor.putString(TodoWidget.KEY_ALL_CHECKLISTS_JSON, arr.toString());
             }
 
-            // 2. Also append to legacy single items json
+            // 2. Also insert into fallback KEY_ITEMS_JSON
             String singleJson = prefs.getString(TodoWidget.KEY_ITEMS_JSON, "[]");
             try {
                 JSONArray singleArr = new JSONArray(singleJson);
-                JSONObject newItem = new JSONObject();
-                newItem.put("text", text);
-                newItem.put("checked", false);
-                singleArr.put(newItem);
-                editor.putString(TodoWidget.KEY_ITEMS_JSON, singleArr.toString());
+                editor.putString(TodoWidget.KEY_ITEMS_JSON, insertAtEndOfActive(singleArr, newItem).toString());
             } catch (Exception ignored) {}
 
-            // 3. Record pending add so Capacitor/Web sync adds it to note HTML content
-            String pendingAddsStr = prefs.getString(TodoWidget.KEY_PENDING_ADDS, "[]");
-            JSONArray pendingAdds;
+            // 3. Record chronological widget add op
+            String opsStr = prefs.getString(TodoWidget.KEY_PENDING_WIDGET_OPS, "[]");
+            JSONArray ops;
             try {
-                pendingAdds = new JSONArray(pendingAddsStr);
+                ops = new JSONArray(opsStr);
             } catch (Exception e) {
-                pendingAdds = new JSONArray();
+                ops = new JSONArray();
             }
-
-            JSONObject addEvent = new JSONObject();
-            addEvent.put("noteId", noteId != null ? noteId : "");
-            addEvent.put("text", text);
-            addEvent.put("timestamp", System.currentTimeMillis());
-            pendingAdds.put(addEvent);
-            editor.putString(TodoWidget.KEY_PENDING_ADDS, pendingAdds.toString());
+            JSONObject addOp = new JSONObject();
+            addOp.put("op", "add");
+            addOp.put("noteId", resolvedNoteId);
+            addOp.put("text", text);
+            addOp.put("timestamp", System.currentTimeMillis());
+            ops.put(addOp);
+            editor.putString(TodoWidget.KEY_PENDING_WIDGET_OPS, ops.toString());
 
             editor.apply();
 
-            // 4. Notify widget to update scrollable list immediately
+            // 4. Refresh widget list immediately
             AppWidgetManager appWidgetManager = AppWidgetManager.getInstance(this);
             if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
                 appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.widget_todo_listview);

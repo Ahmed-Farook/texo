@@ -47,7 +47,7 @@ function createWindow() {
     title: 'texō',
     icon: path.join(__dirname, '..', 'build', 'icon.png'),
     titleBarStyle: isMac ? 'hiddenInset' : 'default',
-    trafficLightPosition: isMac ? { x: 16, y: 14 } : undefined,
+    trafficLightPosition: isMac ? { x: 12, y: 17 } : undefined,
     vibrancy: isMac ? 'under-window' : undefined,
     visualEffectState: isMac ? 'active' : undefined,
     backgroundColor: isMac ? '#00000000' : '#1e1e1e',

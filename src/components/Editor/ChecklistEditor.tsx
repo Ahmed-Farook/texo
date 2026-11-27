@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { Note } from '../../types/note';
 import { triggerHaptic } from '../../utils/haptics';
 import { syncNoteToAndroidWidget } from '../../utils/widgetSync';
@@ -10,6 +10,59 @@ interface ChecklistItem {
   id: string;
   text: string;
 }
+
+/**
+ * Multi-line auto-resizing textarea so long tasks and titles wrap cleanly
+ * instead of scrolling horizontally.
+ */
+const AutoResizeTextarea = React.forwardRef<
+  HTMLTextAreaElement,
+  React.TextareaHTMLAttributes<HTMLTextAreaElement>
+>(({ value, className = '', ...props }, forwardedRef) => {
+  const innerRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const setRefs = useCallback(
+    (node: HTMLTextAreaElement | null) => {
+      innerRef.current = node;
+      if (typeof forwardedRef === 'function') {
+        forwardedRef(node);
+      } else if (forwardedRef) {
+        (forwardedRef as React.MutableRefObject<HTMLTextAreaElement | null>).current = node;
+      }
+    },
+    [forwardedRef]
+  );
+
+  const resize = useCallback(() => {
+    const el = innerRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, []);
+
+  useLayoutEffect(() => {
+    resize();
+  }, [value, resize]);
+
+  useEffect(() => {
+    const el = innerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => resize());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [resize]);
+
+  return (
+    <textarea
+      ref={setRefs}
+      rows={1}
+      value={value}
+      className={className}
+      {...props}
+    />
+  );
+});
+AutoResizeTextarea.displayName = 'AutoResizeTextarea';
 
 interface ChecklistEditorProps {
   note: Note;
@@ -149,8 +202,8 @@ export const ChecklistEditor: React.FC<ChecklistEditorProps> = ({
   const [adderText, setAdderText] = useState('');
   const [isCompletedCollapsed, setIsCompletedCollapsed] = useState(false);
 
-  const adderInputRef = useRef<HTMLInputElement>(null);
-  const taskInputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
+  const adderInputRef = useRef<HTMLTextAreaElement>(null);
+  const taskInputRefs = useRef<Map<string, HTMLTextAreaElement>>(new Map());
   const lastSavedHtmlRef = useRef<string>('');
   const currentNoteIdRef = useRef<string>(note.id);
 
@@ -211,7 +264,7 @@ export const ChecklistEditor: React.FC<ChecklistEditorProps> = ({
         syncNoteToAndroidWidget(updatedNotes, note.id);
       }
     },
-    [note.id, notes, onUpdate]
+    [note.id, note.content, notes, onUpdate]
   );
 
   // Title change handler
@@ -221,8 +274,9 @@ export const ChecklistEditor: React.FC<ChecklistEditorProps> = ({
   };
 
   // First line adder action: creates task and adds to active tasks
-  const handleAddNewTask = () => {
-    const text = adderText.trim();
+  const handleAddNewTask = (overrideText?: string) => {
+    const raw = overrideText !== undefined ? overrideText : adderText;
+    const text = raw.replace(/[\r\n]+/g, ' ').trim();
     if (!text) return;
 
     const newTask: ChecklistItem = {
@@ -236,28 +290,55 @@ export const ChecklistEditor: React.FC<ChecklistEditorProps> = ({
     triggerHaptic();
     commitChanges(title, nextActive, completedTasks);
 
-    // Keep focus in adder input on desktop, or ensure adder remains ready
+    // Keep focus in adder input ready for quick consecutive entries
     adderInputRef.current?.focus();
   };
 
   // First line adder key down handler
-  const handleAdderKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' || e.keyCode === 13 || e.which === 13) {
+  const handleAdderKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((e.key === 'Enter' && !e.shiftKey) || e.keyCode === 13 || e.which === 13) {
       e.preventDefault();
       handleAddNewTask();
     }
   };
 
-  // Active task text change
-  const handleTaskTextChange = (id: string, text: string) => {
-    const nextActive = activeTasks.map((t) => (t.id === id ? { ...t, text } : t));
+  // Active task text change (also handles Android IME soft-keyboard Enter inserting '\n')
+  const handleTaskTextChange = (index: number, id: string, rawText: string) => {
+    if (rawText.includes('\n')) {
+      const nlIdx = rawText.indexOf('\n');
+      const before = rawText.slice(0, nlIdx).replace(/[\r\n]+/g, '');
+      const after = rawText.slice(nlIdx + 1).replace(/[\r\n]+/g, '');
+      const newTask: ChecklistItem = {
+        id: `task-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        text: after,
+      };
+      const nextActive = [
+        ...activeTasks.slice(0, index),
+        { ...activeTasks[index], text: before },
+        newTask,
+        ...activeTasks.slice(index + 1),
+      ];
+      setActiveTasks(nextActive);
+      triggerHaptic();
+      commitChanges(title, nextActive, completedTasks);
+      setTimeout(() => {
+        const nextEl = taskInputRefs.current.get(newTask.id);
+        if (nextEl) {
+          nextEl.focus();
+          nextEl.setSelectionRange(0, 0);
+        }
+      }, 40);
+      return;
+    }
+
+    const nextActive = activeTasks.map((t) => (t.id === id ? { ...t, text: rawText } : t));
     setActiveTasks(nextActive);
     commitChanges(title, nextActive, completedTasks);
   };
 
   // Active task keyboard navigation / creation / deletion
   const handleActiveTaskKeyDown = (
-    e: React.KeyboardEvent<HTMLInputElement>,
+    e: React.KeyboardEvent<HTMLTextAreaElement>,
     index: number,
     taskId: string
   ) => {
@@ -270,15 +351,21 @@ export const ChecklistEditor: React.FC<ChecklistEditorProps> = ({
       } else {
         adderInputRef.current?.focus();
       }
-    } else if (e.key === 'Enter' || e.keyCode === 13 || e.which === 13) {
+    } else if ((e.key === 'Enter' && !e.shiftKey) || e.keyCode === 13 || e.which === 13) {
       e.preventDefault();
-      // Pressing enter inside an active task creates a new task directly below it!
+      const curText = activeTasks[index]?.text || '';
+      const selStart = e.currentTarget.selectionStart ?? curText.length;
+      const selEnd = e.currentTarget.selectionEnd ?? curText.length;
+      const beforeCursor = curText.slice(0, selStart);
+      const afterCursor = curText.slice(selEnd);
+
       const newTask: ChecklistItem = {
         id: `task-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        text: '',
+        text: afterCursor,
       };
       const nextActive = [
-        ...activeTasks.slice(0, index + 1),
+        ...activeTasks.slice(0, index),
+        { ...activeTasks[index], text: beforeCursor },
         newTask,
         ...activeTasks.slice(index + 1),
       ];
@@ -286,7 +373,11 @@ export const ChecklistEditor: React.FC<ChecklistEditorProps> = ({
       triggerHaptic();
       commitChanges(title, nextActive, completedTasks);
       setTimeout(() => {
-        taskInputRefs.current.get(newTask.id)?.focus();
+        const nextEl = taskInputRefs.current.get(newTask.id);
+        if (nextEl) {
+          nextEl.focus();
+          nextEl.setSelectionRange(0, 0);
+        }
       }, 40);
     }
   };
@@ -347,53 +438,65 @@ export const ChecklistEditor: React.FC<ChecklistEditorProps> = ({
     >
       {/* Checklist Title Heading with generous 1-line breathing room (2.75rem / 44px) matching standard notes */}
       <h1 className="mb-11" style={{ marginBottom: '2.75rem' }}>
-        <input
-          type="text"
+        <AutoResizeTextarea
           value={title}
           disabled={isReadOnly}
           enterKeyHint="next"
-          onChange={(e) => handleTitleChange(e.target.value)}
+          onChange={(e) => {
+            const val = e.target.value;
+            if (val.includes('\n')) {
+              handleTitleChange(val.replace(/[\r\n]+/g, ''));
+              adderInputRef.current?.focus();
+              return;
+            }
+            handleTitleChange(val);
+          }}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.keyCode === 13 || e.which === 13) {
+            if ((e.key === 'Enter' && !e.shiftKey) || e.keyCode === 13 || e.which === 13) {
               e.preventDefault();
               adderInputRef.current?.focus();
             }
           }}
           placeholder="To-Do List"
-          className="w-full bg-transparent border-none outline-none font-bold text-[2rem] sm:text-[2.25rem] text-[#1C2B36] dark:text-[#E8EEF3] tracking-tight placeholder:text-[#8AA0B4]/40 leading-[2.5rem]"
+          className="w-full p-0 m-0 bg-transparent border-none outline-none resize-none overflow-hidden whitespace-pre-wrap break-words font-bold text-[2rem] sm:text-[2.25rem] text-[#1C2B36] dark:text-[#E8EEF3] tracking-tight placeholder:text-[#8AA0B4]/40 leading-[2.5rem]"
           aria-label="Checklist Title"
         />
       </h1>
 
       {/* Line 1: Quick List Adder (Type task here and press Enter to add) */}
       {!isReadOnly && (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleAddNewTask();
-          }}
-          className="flex items-center gap-3 py-1.5 px-0.5 group"
-        >
+        <div className="flex items-start gap-3 py-1.5 px-0.5 group">
           <button
             type="button"
-            onClick={handleAddNewTask}
+            onClick={() => handleAddNewTask()}
             disabled={!adderText.trim()}
-            className="w-[1.15rem] h-[1.15rem] rounded-full border-[1.5px] border-[#c2b5a1] dark:border-[#3b5062] hover:border-[#213A50] dark:hover:border-[#4B708B] flex-shrink-0 grid place-content-center opacity-60 hover:opacity-100 transition-all cursor-pointer"
+            className="w-[1.15rem] h-[1.15rem] mt-[3px] rounded-full border-[1.5px] border-[#c2b5a1] dark:border-[#3b5062] hover:border-[#213A50] dark:hover:border-[#4B708B] flex-shrink-0 grid place-content-center opacity-60 hover:opacity-100 transition-all cursor-pointer"
             aria-label="Add task"
             title="Add task"
           />
-          <input
+          <AutoResizeTextarea
             ref={adderInputRef}
-            type="text"
             enterKeyHint="done"
             value={adderText}
-            onChange={(e) => setAdderText(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (val.includes('\n')) {
+                const clean = val.replace(/[\r\n]+/g, '').trim();
+                if (clean) {
+                  handleAddNewTask(clean);
+                } else {
+                  setAdderText('');
+                }
+                return;
+              }
+              setAdderText(val);
+            }}
             onKeyDown={handleAdderKeyDown}
             placeholder="Type a task and press Enter..."
-            className="flex-1 bg-transparent border-none outline-none text-[15px] sm:text-base text-[#213A50] dark:text-[#E8EEF3] placeholder:text-[#8AA0B4]/60 dark:placeholder:text-[#52667A]/60 leading-relaxed"
+            className="flex-1 min-w-0 p-0 m-0 bg-transparent border-none outline-none resize-none overflow-hidden whitespace-pre-wrap break-words text-[15px] sm:text-base text-[#213A50] dark:text-[#E8EEF3] placeholder:text-[#8AA0B4]/60 dark:placeholder:text-[#52667A]/60 leading-relaxed"
             aria-label="Add task"
           />
-        </form>
+        </div>
       )}
 
       {/* Active Tasks List */}
@@ -408,23 +511,22 @@ export const ChecklistEditor: React.FC<ChecklistEditorProps> = ({
               type="button"
               disabled={isReadOnly}
               onClick={() => handleCompleteTask(task.id)}
-              className="w-[1.15rem] h-[1.15rem] mt-0.5 rounded-full border-[1.5px] border-[#c2b5a1] dark:border-[#3b5062] hover:border-[#213A50] dark:hover:border-[#4B708B] flex-shrink-0 transition-all flex items-center justify-center cursor-pointer"
+              className="w-[1.15rem] h-[1.15rem] mt-[3px] rounded-full border-[1.5px] border-[#c2b5a1] dark:border-[#3b5062] hover:border-[#213A50] dark:hover:border-[#4B708B] flex-shrink-0 transition-all flex items-center justify-center cursor-pointer"
               aria-label="Mark task as completed"
             />
 
-            {/* Editable Task Text */}
-            <input
+            {/* Editable Multi-line Wrapping Task Text */}
+            <AutoResizeTextarea
               ref={(el) => {
                 if (el) taskInputRefs.current.set(task.id, el);
                 else taskInputRefs.current.delete(task.id);
               }}
-              type="text"
               enterKeyHint="enter"
               disabled={isReadOnly}
               value={task.text}
-              onChange={(e) => handleTaskTextChange(task.id, e.target.value)}
+              onChange={(e) => handleTaskTextChange(index, task.id, e.target.value)}
               onKeyDown={(e) => handleActiveTaskKeyDown(e, index, task.id)}
-              className="flex-1 bg-transparent border-none outline-none text-[15px] sm:text-base text-[#213A50] dark:text-[#E8EEF3] leading-relaxed"
+              className="flex-1 min-w-0 p-0 m-0 bg-transparent border-none outline-none resize-none overflow-hidden whitespace-pre-wrap break-words text-[15px] sm:text-base text-[#213A50] dark:text-[#E8EEF3] leading-relaxed"
             />
 
             {/* Delete button (visible on mobile touch, hover on desktop) */}
@@ -493,7 +595,7 @@ export const ChecklistEditor: React.FC<ChecklistEditorProps> = ({
                   </button>
 
                   {/* Non-editable Strikethrough Text: cannot edit text, only untickable */}
-                  <span className="flex-1 text-[15px] sm:text-base line-through text-[#8a9ba8] dark:text-[#627788] select-text cursor-default leading-relaxed">
+                  <span className="flex-1 min-w-0 break-words text-[15px] sm:text-base line-through text-[#8a9ba8] dark:text-[#627788] select-text cursor-default leading-relaxed">
                     {task.text}
                   </span>
 

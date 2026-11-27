@@ -11,6 +11,7 @@ import React, {
 import { Note, Folder, ViewMode } from '../types/note';
 import { App as CapApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
+import { StatusBar, Style } from '@capacitor/status-bar';
 import {
   loadStoredNotes,
   saveStoredNotes,
@@ -49,6 +50,7 @@ import { promptBiometricAuth } from '../utils/biometrics';
 import {
   syncNoteToAndroidWidget,
   syncPendingWidgetToggles,
+  syncThemeToAndroid,
   getWidgetPinnedNoteId,
   setWidgetPinnedNoteId,
 } from '../utils/widgetSync';
@@ -517,14 +519,28 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
   }, [user]);
 
-  // Apply dark mode class to html element
+  // Apply dark/light mode across DOM, mobile browser chrome (<meta theme-color>), Capacitor status bar, and Android widgets
   useEffect(() => {
     if (theme === 'dark') {
       document.documentElement.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark');
     }
+    document.documentElement.style.colorScheme = theme;
     localStorage.setItem('apple_notes_theme', theme);
+
+    // Update mobile browser top chrome color
+    const metaTheme = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+    if (metaTheme) {
+      metaTheme.content = theme === 'dark' ? '#151E28' : '#F2ECE0';
+    }
+
+    // Update native mobile status bar (clock, notification icons, battery) & widget palette
+    if (Capacitor.isNativePlatform()) {
+      StatusBar.setStyle({ style: theme === 'dark' ? Style.Dark : Style.Light }).catch(() => {});
+      StatusBar.setBackgroundColor({ color: theme === 'dark' ? '#151E28' : '#F2ECE0' }).catch(() => {});
+      syncThemeToAndroid(theme);
+    }
   }, [theme]);
 
   // Auto-purge notes in Recently Deleted older than 7 days

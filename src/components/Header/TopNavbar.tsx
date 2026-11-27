@@ -118,14 +118,12 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
   const noteToExport = activeNote;
 
   return (
-    <header className="min-h-[48px] h-[calc(48px+env(safe-area-inset-top,0px))] pt-[env(safe-area-inset-top,0px)] border-b border-apple-border dark:border-apple-borderDark bg-[#F2ECE0]/95 dark:bg-[#151E28]/95 backdrop-blur-md flex items-center justify-between px-2 sm:px-3 shrink-0 select-none transition-colors [app-region:drag] relative z-40">
+    <header className="min-h-[48px] h-[calc(48px+env(safe-area-inset-top,0px))] pt-[env(safe-area-inset-top,0px)] border-b border-apple-border dark:border-apple-borderDark bg-[#F2ECE0]/95 dark:bg-[#151E28]/95 backdrop-blur-md flex items-center justify-between px-3 pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] shrink-0 select-none transition-colors [app-region:drag] relative z-40">
       {/* Left controls: Traffic light clearance on Mac + navigation */}
-      <div className="flex items-center space-x-1.5 [app-region:no-drag]">
-        {/* Dedicated clearance spacer for macOS window traffic lights */}
-        {isMacApp ? (
-          <div className="w-[78px] h-12 shrink-0 [app-region:drag]" aria-hidden="true" />
-        ) : (
-          <div className="w-2" />
+      <div className="flex items-center gap-1.5 [app-region:no-drag]">
+        {/* Dedicated clearance spacer strictly for macOS window traffic lights */}
+        {isMacApp && (
+          <div className="w-[62px] h-12 shrink-0 [app-region:drag]" aria-hidden="true" />
         )}
 
         {/* Mobile Back Button (when inside editor on phone) */}
@@ -139,7 +137,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
                 setActiveNoteId(null);
               }
             }}
-            className="md:hidden flex items-center space-x-1 text-apple-yellow hover:text-apple-yellowHover dark:text-[#7EAAD0] dark:hover:text-[#9DC3E6] text-xs font-semibold py-1 px-1 rounded active:opacity-70 transition-opacity"
+            className="md:hidden flex items-center space-x-1 text-apple-yellow hover:text-apple-yellowHover dark:text-[#7EAAD0] dark:hover:text-[#9DC3E6] text-xs font-semibold py-1 pr-1.5 pl-0.5 rounded active:opacity-70 transition-opacity"
           >
             <ChevronLeft size={18} />
             <span>Notes</span>
@@ -152,7 +150,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
             onClick={() => {
               setIsFolderPickerOpen(true);
             }}
-            className="md:hidden flex items-center space-x-1.5 text-xs font-semibold text-[#1C2B36] dark:text-[#E8EEF3] bg-[#E5DCCB]/80 dark:bg-[#1C2733] hover:bg-[#E5DCCB] dark:hover:bg-[#223344] px-2.5 py-1 rounded-full transition-all active:scale-95 border border-[#DFD3C0] dark:border-[#263747] shadow-xs ml-1"
+            className="md:hidden flex items-center space-x-1.5 text-xs font-semibold text-[#1C2B36] dark:text-[#E8EEF3] bg-[#E5DCCB]/80 dark:bg-[#1C2733] hover:bg-[#E5DCCB] dark:hover:bg-[#223344] px-2.5 py-1 rounded-full transition-all active:scale-95 border border-[#DFD3C0] dark:border-[#263747] shadow-xs"
           >
             <Folder size={13} className="text-[#395060] dark:text-[#7EAAD0]" />
             <span className="truncate max-w-[130px]">{currentFolder?.name || 'Notes'}</span>
@@ -209,7 +207,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
       </div>
 
       {/* Right controls */}
-      <div className="flex items-center space-x-1 sm:space-x-1.5 [app-region:no-drag]">
+      <div className="flex items-center gap-1 sm:gap-1.5 [app-region:no-drag]">
         {/* Hidden file input for importing .txt, .md, .html, or .zip archives */}
         <input
           ref={importInputRef}
@@ -464,7 +462,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
           {theme === 'dark' ? <Sun size={17} className="text-yellow-400" /> : <Moon size={17} />}
         </button>
 
-        <div className="hidden md:block h-4 w-px bg-neutral-300 dark:bg-neutral-700 mx-1" />
+        <div className="hidden md:block h-4 w-px bg-neutral-300 dark:bg-neutral-700 mx-0.5" />
 
         {/* Mobile: In editor view, show Delete button. In list view, show Software Update button. */}
         {mobileView === 'editor' ? (
@@ -477,7 +475,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
                 setMobileView('list');
               }}
               title="Delete Note"
-              className="md:hidden flex items-center justify-center p-2 rounded-md text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 active:scale-95 transition-colors duration-150 outline-none focus:outline-none focus:ring-0"
+              className="md:hidden flex items-center justify-center p-1.5 rounded-md text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 active:scale-95 transition-colors duration-150 outline-none focus:outline-none focus:ring-0"
             >
               <Trash2 size={17} />
             </button>

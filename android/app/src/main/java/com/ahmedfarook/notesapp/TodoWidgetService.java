@@ -58,10 +58,8 @@ public class TodoWidgetService extends RemoteViewsService {
             mItems.clear();
             SharedPreferences prefs = mContext.getSharedPreferences(TodoWidget.PREFS_NAME, Context.MODE_PRIVATE);
 
-            // 1. Get note assigned to this widget
             mNoteId = prefs.getString(TodoWidgetConfigureActivity.PREF_PREFIX_KEY + mAppWidgetId, "");
 
-            // 2. Read all checklists
             String allJson = prefs.getString(TodoWidget.KEY_ALL_CHECKLISTS_JSON, "[]");
             boolean found = false;
 
@@ -89,7 +87,6 @@ public class TodoWidgetService extends RemoteViewsService {
                 e.printStackTrace();
             }
 
-            // Fallback: If not found in allChecklists, check single default items
             if (!found && mItems.isEmpty()) {
                 String singleJson = prefs.getString(TodoWidget.KEY_ITEMS_JSON, "[]");
                 try {
@@ -118,27 +115,39 @@ public class TodoWidgetService extends RemoteViewsService {
                 return null;
             }
 
+            boolean isDark = TodoWidget.isDarkTheme(mContext);
             TodoItem item = mItems.get(position);
             RemoteViews views = new RemoteViews(mContext.getPackageName(), R.layout.widget_todo_item);
 
             if (item.checked) {
-                views.setImageViewResource(R.id.widget_todo_item_check, R.drawable.widget_checkbox_checked);
+                views.setImageViewResource(R.id.widget_todo_item_check,
+                        isDark ? R.drawable.widget_checkbox_checked_dark : R.drawable.widget_checkbox_checked);
                 SpannableString span = new SpannableString(item.text);
                 span.setSpan(new StrikethroughSpan(), 0, item.text.length(), 0);
                 views.setTextViewText(R.id.widget_todo_item_text, span);
-                views.setTextColor(R.id.widget_todo_item_text, Color.parseColor("#8AA0B4"));
+                views.setTextColor(R.id.widget_todo_item_text, Color.parseColor(isDark ? "#627788" : "#8AA0B4"));
             } else {
-                views.setImageViewResource(R.id.widget_todo_item_check, R.drawable.widget_checkbox_unchecked);
+                views.setImageViewResource(R.id.widget_todo_item_check,
+                        isDark ? R.drawable.widget_checkbox_unchecked_dark : R.drawable.widget_checkbox_unchecked);
                 views.setTextViewText(R.id.widget_todo_item_text, item.text);
-                views.setTextColor(R.id.widget_todo_item_text, Color.parseColor("#1C2B36"));
+                views.setTextColor(R.id.widget_todo_item_text, Color.parseColor(isDark ? "#E8EEF3" : "#1C2B36"));
             }
 
-            // Fill-in intent to toggle this specific item
-            Intent fillInIntent = new Intent();
-            fillInIntent.putExtra("item_index", position);
-            fillInIntent.putExtra("note_id", mNoteId);
-            fillInIntent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, mAppWidgetId);
-            views.setOnClickFillInIntent(R.id.widget_todo_item_row, fillInIntent);
+            // Fill-in intent for Toggle (clicking checkbox or task text)
+            Intent toggleFillIn = new Intent();
+            toggleFillIn.putExtra("widget_action", "toggle");
+            toggleFillIn.putExtra("item_index", position);
+            toggleFillIn.putExtra("note_id", mNoteId);
+            toggleFillIn.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, mAppWidgetId);
+            views.setOnClickFillInIntent(R.id.widget_todo_item_toggle_area, toggleFillIn);
+
+            // Fill-in intent for Delete (clicking × button on the right)
+            Intent deleteFillIn = new Intent();
+            deleteFillIn.putExtra("widget_action", "delete");
+            deleteFillIn.putExtra("item_index", position);
+            deleteFillIn.putExtra("note_id", mNoteId);
+            deleteFillIn.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, mAppWidgetId);
+            views.setOnClickFillInIntent(R.id.widget_todo_item_delete, deleteFillIn);
 
             return views;
         }
@@ -164,4 +173,3 @@ public class TodoWidgetService extends RemoteViewsService {
         }
     }
 }
-
